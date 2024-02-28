@@ -29,6 +29,7 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
 
     if rank == 0 and config.wandb.enabled:
         os.environ['WANDB_CACHE_DIR'] = get_local_dir(config.local_dirs)
+        wandb.login(key=config.wandb.key)
         wandb.init(
             entity=config.wandb.entity,
             project=config.wandb.project,
