@@ -98,4 +98,4 @@ defaults:
 - _self_
 - model: blank_model_fp32 # basic model configuration
 - loss: sft # which loss function, either sft or dpo (specify loss.beta if using dpo)
-- acquisition: uniform
+- acquisition: null
