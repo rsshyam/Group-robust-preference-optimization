@@ -1,7 +1,7 @@
 import datasets
 import torch
 from torch.utils.data import DataLoader, Dataset
-from utils import get_local_dir, TemporarilySeededRandom
+from src.utils import get_local_dir, TemporarilySeededRandom
 from torch.nn.utils.rnn import pad_sequence
 from collections import defaultdict
 import tqdm
@@ -160,7 +160,7 @@ def get_hh(split: str, silent: bool = False, cache_dir: str = None) -> Dict[str,
     return data
 
 
-def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = None):
+def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = None, test:bool = False):
     """Load the given dataset by name. Supported by default are 'shp', 'hh', and 'se'."""
     if name == 'shp':
         data = get_shp(split, silent=silent, cache_dir=cache_dir)
@@ -173,6 +173,15 @@ def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = No
 
     assert set(list(data.values())[0].keys()) == {'responses', 'pairs', 'sft_target'}, \
         f"Unexpected keys in dataset: {list(list(data.values())[0].keys())}"
+        
+        #If test mode reduce the dataset size to only 10 datapoints
+    if test:
+        print('Using test data config')        
+        data_keys, new_data = list(data.keys())[:32], dict()
+        for key in data_keys:
+            new_data[key] = data[key]
+        data = new_data
+        print('Pruned test data config')
 
     return data
 
@@ -289,7 +298,8 @@ def get_batch_iterator(names: List[str],
                        n_examples: Optional[int] = None,
                        seed:int = 0,
                        silent: bool = False,
-                       cache_dir: Optional[str] = None) -> Iterator[Dict]:
+                       cache_dir: Optional[str] = None,
+                       test_dataset: bool = False) -> Iterator[Dict]:
     """Get an iterator over batches of data. Stops after n_epochs or n_examples, whichever comes first.
 
     Args:
@@ -313,11 +323,11 @@ def get_batch_iterator(names: List[str],
         datasets.logging.set_verbosity_error()
 
     with TemporarilySeededRandom(seed):
-        permutation_seeds = iter(np.random.randint(0, 2**32, size=1000000))
+        permutation_seeds = iter(np.random.randint(0, 2**20, size=1000000))
         flat_data = []
         for name in names:
             truncation_mode = 'keep_end' if name == 'hh' else 'keep_start'
-            for prompt, data in get_dataset(name, split, silent=silent, cache_dir=cache_dir).items():
+            for prompt, data in get_dataset(name, split, silent=silent, cache_dir=cache_dir, test=test_dataset).items():
                 flat_data.append((prompt, data['responses'], data['pairs'], data['sft_target'], truncation_mode))
 
     collate_fn = get_collate_fn(tokenizer)

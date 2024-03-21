@@ -19,8 +19,8 @@ from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 import tensor_parallel as tp
 import contextlib
 
-from preference_datasets import get_batch_iterator
-from utils import (
+from src.preference_datasets import get_batch_iterator
+from src.utils import (
     slice_and_move_batch_for_device,
     formatted_dict,
     all_gather_if_needed,
@@ -168,6 +168,7 @@ class BasicTrainer(object):
             max_length=config.max_length,
             max_prompt_length=config.max_prompt_length,
             sft_mode=config.loss.name == 'sft',
+            test_dataset=config.test_dataset
         )
 
         self.policy = policy
@@ -353,6 +354,7 @@ class BasicTrainer(object):
             #### END EVALUATION ####
 
             #### BEGIN TRAINING ####
+                                   
             self.policy.train()
 
             start_time = time.time()
@@ -411,6 +413,9 @@ class BasicTrainer(object):
             'state': state,
             'metrics': metrics if metrics is not None else {},
         }, output_path)
+        
+    def write_labelled_dataset(self, dataset, labels):
+        pass 
     
     def save(self, output_dir: Optional[str] = None, metrics: Optional[Dict] = None):
         """Save policy, optimizer, and scheduler state to disk."""

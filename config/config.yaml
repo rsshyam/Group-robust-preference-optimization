@@ -91,7 +91,11 @@ eval_every: 20_000
 # prevent wandb from logging more than once per minimum_log_interval_secs
 minimum_log_interval_secs: 1.0
 
+# ensure an sft model is explicitly provided before running:
+assert_sft_step: true
+
 defaults:
 - _self_
 - model: blank_model_fp32 # basic model configuration
 - loss: sft # which loss function, either sft or dpo (specify loss.beta if using dpo)
+- acquisition: uniform
