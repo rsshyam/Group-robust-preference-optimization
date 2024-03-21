@@ -1,0 +1,27 @@
+name_or_path: openaccess-ai-collective/tiny-mistral
+tokenizer_name_or_path: openaccess-ai-collective/tiny-mistral
+archive: null
+
+# the name of the module class to wrap with FSDP; should be something like
+#   e.g. GPT2Block, GPTNeoXLayer, LlamaDecoderLayer, etc.
+block_name: BertLayer
+
+# the dtype for the policy parameters/optimizer state
+policy_dtype: float32
+
+# the mixed precision dtype if using FSDP; defaults to the same as the policy
+fsdp_policy_mp: null
+
+# the dtype for the reference model (which is used for inference only)
+reference_dtype: float16
+hidden_dims: 512
+
+use_lora: True
+lora_rank: 8
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
