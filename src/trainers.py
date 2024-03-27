@@ -362,18 +362,14 @@ class BasicTrainer(object):
             
             if self.config.active:
                 
-                selected_batch, not_selected_batch = self.data_selector.\
+                selected_batch, not_selected_batch, selected_size = self.data_selector.\
                     select_batch(batch, self.config.selected_batch_size)
-                
-                batch_size = len(selected_batch)
-                print('selected_batch', selected_batch)
-                print('shape selected_batch', len(selected_batch))
-                
-                batch_size = len(selected_batch)
+                batch_size = selected_size
+            
             else:
                 selected_batch = batch
                 not_selected_batch = None
-                batch_size = len(selected_batch)
+                batch_size = self.config.batch_size
             
             #### BEGIN TRAINING ####
             
@@ -402,7 +398,7 @@ class BasicTrainer(object):
             batch_metrics['grad_norm'].append(grad_norm)
 
             self.batch_counter += 1
-            self.example_counter += self.config.batch_size
+            self.example_counter += batch_size #n.b. self.config.batch_size exists if needed
 
             if last_log is None or time.time() - last_log > self.config.minimum_log_interval_secs:
                 mean_train_metrics = {k: sum(v) / len(v) for k, v in batch_metrics.items()}
@@ -418,7 +414,7 @@ class BasicTrainer(object):
                 rank0_print(f'skipping logging after {self.example_counter} examples to avoid logging too frequently')
             #### END TRAINING ####
             
-            #### END OF TRAINING EVAL ####
+            #### END OF TRAINING EVAL (can be on the train set) ####
             #TODO: Evaluate and save the losses of the training dataset if option requested.
         
 

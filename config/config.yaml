@@ -95,11 +95,17 @@ minimum_log_interval_secs: 1.0
 # ensure an sft model is explicitly provided before running:
 assert_sft_step: true
 
+#test dataset setup:
+test_dataset: False
+
+#Active Learning default settings:
+active: False
+selected_batch_size: null
+
+
+
 defaults:
 - _self_
 - model: blank_model_fp32 # basic model configuration
 - loss: sft # which loss function, either sft or dpo (specify loss.beta if using dpo)
 - data_selection: null
-
-#test dataset setup:
-test_dataset: False
