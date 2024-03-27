@@ -6,3 +6,10 @@ block_name: GPTNeoXLayer
 policy_dtype: float32
 fsdp_policy_mp: null
 reference_dtype: float16
+
+use_lora: True
+lora_rank: 8
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_modules:
+  - query_key_value
