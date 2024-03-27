@@ -29,9 +29,12 @@ from src.utils import (
     rank0_print,
     get_local_dir,
 )
+import src.data_selection
+
 import numpy as np
 import wandb
 import tqdm
+import hydra
 
 import random
 import os
@@ -179,7 +182,9 @@ class BasicTrainer(object):
         self.eval_iterator = get_batch_iterator(**data_iterator_kwargs, split='test', n_examples=config.n_eval_examples, batch_size=config.eval_batch_size, silent=rank != 0, cache_dir=get_local_dir(config.local_dirs))
         self.eval_batches = list(self.eval_iterator)
         rank0_print(f'Loaded {len(self.eval_batches)} eval batches of size {config.eval_batch_size}')
-
+        
+        self.data_selector = hydra.utils.instantiate(self.config.data_selection)
+        
     def get_batch_samples(self, batch: Dict[str, torch.LongTensor]) -> Tuple[str, str]:
         """Generate samples from the policy (and reference model, if doing DPO training) for the given batch of inputs."""
 
@@ -353,14 +358,32 @@ class BasicTrainer(object):
                         self.save(output_dir, mean_eval_metrics)
             #### END EVALUATION ####
 
+            #### POINT SELECTION ####
+            
+            if self.config.active:
+                
+                selected_batch, not_selected_batch = self.data_selector.\
+                    select_batch(batch, self.config.selected_batch_size)
+                
+                batch_size = len(selected_batch)
+                print('selected_batch', selected_batch)
+                print('shape selected_batch', len(selected_batch))
+                
+                batch_size = len(selected_batch)
+            else:
+                selected_batch = batch
+                not_selected_batch = None
+                batch_size = len(selected_batch)
+            
             #### BEGIN TRAINING ####
-                                   
+            
             self.policy.train()
 
             start_time = time.time()
             batch_metrics = defaultdict(list)
             for microbatch_idx in range(self.config.gradient_accumulation_steps):
-                global_microbatch = slice_and_move_batch_for_device(batch, microbatch_idx, self.config.gradient_accumulation_steps, self.rank)
+                global_microbatch = slice_and_move_batch_for_device(selected_batch, microbatch_idx, 
+                                                                    self.config.gradient_accumulation_steps, self.rank)
                 local_microbatch = slice_and_move_batch_for_device(global_microbatch, self.rank, self.world_size, self.rank)
                 loss, metrics = self.get_batch_metrics(local_microbatch, self.config.loss, train=True)
                 (loss / self.config.gradient_accumulation_steps).backward()
@@ -374,7 +397,7 @@ class BasicTrainer(object):
             self.optimizer.zero_grad()
 
             step_time = time.time() - start_time
-            examples_per_second = self.config.batch_size / step_time
+            examples_per_second = batch_size / step_time
             batch_metrics['examples_per_second'].append(examples_per_second)
             batch_metrics['grad_norm'].append(grad_norm)
 
@@ -394,6 +417,10 @@ class BasicTrainer(object):
             else:
                 rank0_print(f'skipping logging after {self.example_counter} examples to avoid logging too frequently')
             #### END TRAINING ####
+            
+            #### END OF TRAINING EVAL ####
+            #TODO: Evaluate and save the losses of the training dataset if option requested.
+        
 
 
     def clip_gradient(self):

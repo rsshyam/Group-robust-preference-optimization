@@ -99,7 +99,7 @@ defaults:
 - _self_
 - model: blank_model_fp32 # basic model configuration
 - loss: sft # which loss function, either sft or dpo (specify loss.beta if using dpo)
-- acquisition: null
+- data_selection: null
 
 #test dataset setup:
 test_dataset: False
