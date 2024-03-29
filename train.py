@@ -23,8 +23,7 @@ if os.name != 'nt':
 OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dirs: get_local_run_dir(exp_name, local_dirs))
 
 
-def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Module, reference_model: Optional[nn.Module] = None,
-                acquisition_model: Optional[nn.Module] = None):
+def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Module, reference_model: Optional[nn.Module] = None):
     """Main function for each worker process (may be only 1 for BasicTrainer/TensorParallelTrainer)."""
     if 'FSDP' in config.trainer:
         init_distributed(rank, world_size, port=config.fsdp_port)
@@ -91,7 +90,6 @@ def main(config: DictConfig):
     models = model_generator.generate_models(config)    
     
     #TODO: Temporary code -> we can store all 'models' in a class and request access to them as needed     
-    acquisition_model = models.get('acq_model', 'None')
     
     if config.loss.name == 'sft':
         policy = models.get('sft_model', None)
@@ -102,9 +100,6 @@ def main(config: DictConfig):
             
     if 'FSDP' in config.trainer and os.name != 'nt':
         
-        #We haven't work through the code behind this setup yet
-        if acquisition_model is not None: raise NotImplementedError()
-        
         world_size = torch.cuda.device_count()
         print('starting', world_size, 'processes for FSDP training')
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
@@ -113,7 +108,7 @@ def main(config: DictConfig):
         mp.spawn(worker_main, nprocs=world_size, args=(world_size, config, policy, reference_model), join=True)
     else:
         print('starting single-process worker')
-        worker_main(0, 1, config, policy, reference_model, acquisition_model)
+        worker_main(0, 1, config, policy, reference_model)
 
 
 if __name__ == '__main__':

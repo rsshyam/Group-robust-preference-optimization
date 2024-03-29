@@ -211,32 +211,6 @@ class ModelGenerator:
             models = {'policy_model': policy_model,
                       'ref_model': ref_model}
             
-            if config.active:
-                
-                print('Loading acquisition function model and reference model')
-                
-                #Load the acquisition model for 
-                acq_model = self.create_policy(config.model.name_or_path, 
-                                                  config.model.reference_dtype,
-                                                  config,
-                                                  use_lora=config.model.use_lora,
-                                                  lora_rank=config.model.lora_rank,
-                                                  lora_alpha=config.model.lora_alpha,
-                                                  lora_dropout=config.model.lora_dropout)           
-        
-                acq_ref_model = self.create_policy(config.model.name_or_path, 
-                                                  config.model.reference_dtype,
-                                                  config,
-                                                  use_lora=config.model.use_lora,
-                                                  lora_rank=config.model.lora_rank,
-                                                  lora_alpha=config.model.lora_alpha,
-                                                  lora_dropout=config.model.lora_dropout)
-                
-                #Add the models to the output:
-                models['acq_model'] = acq_model
-                models['acq_ref_model'] = acq_ref_model
-            
-                
         else:
             raise NotImplementedError(
                 f'config.loss.name: {config.loss.name} not implemented yet')
