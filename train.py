@@ -13,6 +13,8 @@ import json
 import socket
 from typing import Optional, Set
 from src.models import ModelGenerator
+from src.data_selection import DataSelector
+
 
 #System specific installs:
 if os.name != 'nt':
@@ -23,7 +25,8 @@ if os.name != 'nt':
 OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dirs: get_local_run_dir(exp_name, local_dirs))
 
 
-def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Module, reference_model: Optional[nn.Module] = None):
+def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Module,
+                reference_model: Optional[nn.Module] = None, data_selector: Optional[DataSelector] = None):
     """Main function for each worker process (may be only 1 for BasicTrainer/TensorParallelTrainer)."""
     if 'FSDP' in config.trainer:
         init_distributed(rank, world_size, port=config.fsdp_port)
@@ -84,12 +87,16 @@ def main(config: DictConfig):
  
     #CREATES THE POLICY
     os.environ['XDG_CACHE_HOME'] = get_local_dir(config.local_dirs)
+
+    print('build data selector')     
+    data_selector = hydra.utils.instantiate(config.data_selection,
+                                            trainer=config.get('trainer', None),
+                                            local_dir=get_local_dir(config.local_dirs))
+
     print('building policy')
-    
+    #TODO: Temporary code -> we can store all models in a class and request access to them as needed in the trainer
     model_generator = ModelGenerator()
-    models = model_generator.generate_models(config)    
-    
-    #TODO: Temporary code -> we can store all 'models' in a class and request access to them as needed     
+    models = model_generator.generate_models(config)  
     
     if config.loss.name == 'sft':
         policy = models.get('sft_model', None)
@@ -105,10 +112,10 @@ def main(config: DictConfig):
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
         resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
         print(f'setting RLIMIT_NOFILE soft limit to {hard} from {soft}')
-        mp.spawn(worker_main, nprocs=world_size, args=(world_size, config, policy, reference_model), join=True)
+        mp.spawn(worker_main, nprocs=world_size, args=(world_size, config, policy, reference_model, data_selector), join=True)
     else:
         print('starting single-process worker')
-        worker_main(0, 1, config, policy, reference_model)
+        worker_main(0, 1, config, policy, reference_model, data_selector=data_selector)
 
 
 if __name__ == '__main__':
