@@ -183,7 +183,10 @@ class BasicTrainer(object):
         self.eval_batches = list(self.eval_iterator)
         rank0_print(f'Loaded {len(self.eval_batches)} eval batches of size {config.eval_batch_size}')
         
-        self.data_selector = hydra.utils.instantiate(self.config.data_selection)
+        if self.config.active:
+            self.data_selector = hydra.utils.instantiate(self.config.data_selection)
+        else:
+            self.data_selector = None
         
     def get_batch_samples(self, batch: Dict[str, torch.LongTensor]) -> Tuple[str, str]:
         """Generate samples from the policy (and reference model, if doing DPO training) for the given batch of inputs."""
