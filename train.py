@@ -48,7 +48,8 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
 
     TrainerClass = getattr(trainers, config.trainer)
     print(f'Creating trainer on process {rank} with world size {world_size}')
-    trainer = TrainerClass(policy, config, config.seed, config.local_run_dir, reference_model=reference_model, rank=rank, world_size=world_size)
+    trainer = TrainerClass(policy, config, config.seed, config.local_run_dir, reference_model=reference_model,
+                           data_selector=data_selector, rank=rank, world_size=world_size)
 
     trainer.train()
     trainer.save()
@@ -88,10 +89,14 @@ def main(config: DictConfig):
     #CREATES THE POLICY
     os.environ['XDG_CACHE_HOME'] = get_local_dir(config.local_dirs)
 
+
+    #We will be required to test a setup when the data selector is None...
     print('build data selector')     
     data_selector = hydra.utils.instantiate(config.data_selection,
-                                            trainer=config.get('trainer', None),
-                                            local_dir=get_local_dir(config.local_dirs))
+                                            other_config=config,
+                                            _recursive_=False)
+    
+    print('data selector type', type(data_selector))
 
     print('building policy')
     #TODO: Temporary code -> we can store all models in a class and request access to them as needed in the trainer

@@ -152,7 +152,6 @@ def init_distributed(rank: int, world_size: int, master_addr: str = 'localhost',
     dist.init_process_group(backend, rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
-
 class TemporarilySeededRandom:
     def __init__(self, seed):
         """Temporarily set the random seed, and then restore it when exiting the context."""

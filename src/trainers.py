@@ -266,12 +266,12 @@ class BasicTrainer(object):
                         self.save(output_dir, mean_eval_metrics)
             #### END EVALUATION ####
 
-            #### POINT SELECTION ####
-            
+            #### POINT SELECTION ####            
             if self.data_selector is not None:
-                
+                                
                 selected_batch, not_selected_batch, selected_size = self.data_selector.\
-                    select_batch(batch, self.config.selected_batch_size)
+                    select_batch(batch, self.config.selected_batch_size,
+                                 self.policy, self.reference_model)
                 batch_size = selected_size
             
             else:

@@ -86,9 +86,9 @@ class ModelGenerator:
         print('Current GPU usage')
         
         for dev in range(torch.cuda.device_count()):
-            print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(dev)/1024/1024/1024))
-            print("torch.cuda.memory_reserved: %fGB"%(torch.cuda.memory_reserved(dev)/1024/1024/1024))
-            print("torch.cuda.max_memory_reserved: %fGB"%(torch.cuda.max_memory_reserved(dev)/1024/1024/1024))
+            print(f"dev {dev}, torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(dev)/1024/1024/1024))
+            print(f"dev {dev}, torch.cuda.memory_reserved: %fGB"%(torch.cuda.memory_reserved(dev)/1024/1024/1024))
+            print(f"dev {dev}, torch.cuda.max_memory_reserved: %fGB"%(torch.cuda.max_memory_reserved(dev)/1024/1024/1024))
             
         print(f'Loaded model onto device: {policy.device}')
         
