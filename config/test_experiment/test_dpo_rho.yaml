@@ -1,7 +1,7 @@
 # @package _global_
 defaults:
   - override /model: tiny-mistral
-  - override /loss: dpo
+  - override /data_selection: rho_loss_dpo
 
 datasets:
  - hh 
@@ -9,18 +9,15 @@ datasets:
 local_dirs:
  - test_outputs
 
-exp_name: test_dpo_tiny_mistral_run
-
-trainer: BasicTrainer 
-loss.beta: 0.1
-
-sample_during_eval: false
+exp_name: test_dpo_rho_loss_run
 gradient_accumulation_steps: 2 
 batch_size: 10 
 eval_batch_size: 10 
+trainer: BasicTrainer 
+sample_during_eval: false
 
 wandb:
  enabled: false
 
 test_dataset: true
- 
+selected_batch_size: 2
