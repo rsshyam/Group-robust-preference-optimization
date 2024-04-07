@@ -89,14 +89,10 @@ def main(config: DictConfig):
     #CREATES THE POLICY
     os.environ['XDG_CACHE_HOME'] = get_local_dir(config.local_dirs)
 
-
-    #We will be required to test a setup when the data selector is None...
     print('build data selector')     
-    data_selector = hydra.utils.instantiate(config.data_selection,
+    data_selector = hydra.utils.instantiate(config.get('data_selection', None),
                                             other_config=config,
                                             _recursive_=False)
-    
-    print('data selector type', type(data_selector))
 
     print('building policy')
     #TODO: Temporary code -> we can store all models in a class and request access to them as needed in the trainer
