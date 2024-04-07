@@ -7,5 +7,5 @@
 # Specific Folders #
 ####################
 
-test_outputs # created by test.py
-outputs      # created by hydra
+test_outputs/   # created by test.py
+outputs/         # created by hydra
