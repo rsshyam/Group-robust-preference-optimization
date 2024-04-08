@@ -11,36 +11,17 @@ from hydra import initialize, compose
 
 from train import main
 
-#Ensure the tests run in the order written:
-def cmp(a, b):
-    return (a > b) - (a < b) 
-unittest.TestLoader.sortTestMethodsUsing = lambda self, a, b: cmp(a, b) * -1
-
-
 class End2EndTestCase(unittest.TestCase):
     
     @classmethod
     def setUpClass(self) -> None:
         
-        self.dir_path = './test_outputs'
+        self.dir_path = os.path.join('.', 'test_outputs')
 
         #Create the test outputs:        
         if not os.path.exists(self.dir_path):
             os.mkdir(self.dir_path)      
-        
-    @classmethod
-    def tearDownClass(self) -> None:
-                  
-        #Delete the resulting policy, optimizer and scheduler objects
-        file_path = os.path.join(self.dir_path, 'LATEST')
-        os.remove(os.path.join(file_path, 'policy.pt'))
-        os.remove(os.path.join(file_path, 'optimizer.pt'))
-        os.remove(os.path.join(file_path, 'scheduler.pt'))
-        os.remove(os.path.join(self.dir_path, 'config.yaml'))
-        
-        # Delete the LATEST folder
-        os.rmdir(file_path)
-        
+                
     def run_experiment_config(self, override_list):
         
         with initialize(version_base=None, config_path="./config"):
@@ -69,7 +50,7 @@ class TestBasicTraining(End2EndTestCase):
     def tearDownClass(self) -> None:
         super().tearDownClass()
         
-    def test_basic_sft(self) -> None:
+    def test_a_basic_sft(self) -> None:
         """
         We ensure that test_basic_sft is placed first in the class so as to create
         the pretrained reference model setup in test_output dir that the other tests
@@ -82,7 +63,7 @@ class TestBasicTraining(End2EndTestCase):
         model_archive = os.path.join(self.dir_path, 'LATEST', 'policy.pt')
         
         self.run_experiment_config(override_list=["+test_experiment=test_dpo",
-                                                 f"++model.archive={model_archive}"])
+                                                  f"++model.archive={model_archive}"])
         
 
 class TestDataSelection(End2EndTestCase):
@@ -100,7 +81,7 @@ class TestDataSelection(End2EndTestCase):
         super().tearDownClass()
         
         
-    def test_basic_sft(self) -> None:
+    def test_a_basic_sft(self) -> None:
         """
         We ensure that test_basic_sft is placed first in the class so as to create
         the pretrained reference model setup in test_output dir that the other tests
@@ -124,5 +105,10 @@ class TestDataSelection(End2EndTestCase):
                                     f"++data_selection.sft_state_dict_path={model_archive}"])
 
 if __name__ == '__main__':
+    
+    #Ensure the tests run in the order written:
+    def cmp(a, b):
+        return (a > b) - (a < b) 
+    unittest.TestLoader.sortTestMethodsUsing = lambda self, a, b: cmp(a, b) * -1
     
     unittest.main()

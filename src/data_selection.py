@@ -11,20 +11,16 @@ import torch.nn as nn
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
-from src.utils import (
-    rank0_print, 
+from src.utils import ( 
     get_local_dir,
     slice_and_move_batch_for_device)
 from src.models import ModelGenerator
 from src.loss_utils import (
     preference_loss,
-    _get_batch_logps,
-    concatenated_inputs,
     concatenated_forward)
 
-import json
 from omegaconf import DictConfig
-from typing import Dict, List, Union, Tuple
+from typing import Dict, List, Union
        
 class DataSelector(ABC):
     
@@ -206,7 +202,7 @@ class DPORHOLossSelection(DataSelector):
                                                                     self.config.gradient_accumulation_steps, 0)
     
                 #TODO: Implement FSDP calculation here for RHO-Loss policies etc...
-                
+            
                 policy_chosen_logps, policy_rejected_logps = concatenated_forward(ft_model, global_microbatch)
                 reference_chosen_logps, reference_rejected_logps = concatenated_forward(sft_model, global_microbatch)
     
