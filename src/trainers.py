@@ -141,9 +141,6 @@ class BasicTrainer(object):
         train_test = 'train' if train else 'eval'
 
         if loss_config.name in {'dpo', 'ipo'}:
-            
-            print('concat forward true')
-            
             policy_chosen_logps, policy_rejected_logps = self.concatenated_forward(self.policy, batch)
             with torch.no_grad():
                 reference_chosen_logps, reference_rejected_logps = self.concatenated_forward(self.reference_model, batch)
