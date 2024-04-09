@@ -17,6 +17,84 @@ from src.utils import get_local_dir
 from omegaconf.listconfig import ListConfig
 
 class ModelGenerator:
+    
+    
+    def load_saved_model(self, model, model_state_dict_path):
+        
+        #Load the state dictionary into memory
+        state_dict = torch.load(model_state_dict_path, map_location='cpu')
+        step, metrics = state_dict['step_idx'], state_dict['metrics']
+
+        #Load state dict into policy and ref model:
+        print(f'loading pre-trained weights at step {step} from\
+              {model_state_dict_path} with metrics {json.dumps(metrics, indent=2)}')
+        
+        #load_state_dict moves weights onto the model's device
+        model.load_state_dict(state_dict['state'])
+        
+        return model 
+    
+    def create_policy_from_config(self, model_config, trainer:str, local_dirs, reference:bool=False):
+        
+        model_kwargs = {'device_map': 'balanced'} if trainer == 'BasicTrainer' else {}
+        
+        if reference:
+            dtype = model_config.policy_dtype
+        else:
+            dtype = model_config.reference_dtype
+        
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=dtype
+        )
+        
+        #Load model from Huggingface:
+        policy = transformers.AutoModelForCausalLM.from_pretrained(
+            model_config.name_or_path, 
+            cache_dir=local_dirs, 
+            low_cpu_mem_usage=True,
+            quantization_config=bnb_config,
+            output_hidden_states=True,
+            trust_remote_code=True,
+            **model_kwargs)
+        
+        policy.gradient_checkpointing_enable()
+        
+        #Setup model with LoRA:
+        if model_config.use_lora: 
+            policy = prepare_model_for_kbit_training(policy)
+            
+            target_modules = model_config.lora_target_modules
+            
+            assert isinstance(target_modules, ListConfig) or isinstance(target_modules, list),\
+                f'lora_target_modules type:{type(target_modules)} must be type ListConfig or list'
+    
+            loraconfig = LoraConfig(
+                r=model_config.lora_rank,
+                lora_alpha=model_config.lora_alpha,
+                target_modules=target_modules,
+                lora_dropout=model_config.lora_dropout,
+                bias="none",
+                task_type="CAUSAL_LM")
+    
+            #Apply lora config to policy model:
+            policy = get_peft_model(policy, loraconfig)            
+            policy = self.manually_map_lora_to_dtype(policy, getattr(torch,dtype))
+                    
+        print('Current GPU usage')
+        
+        for dev in range(torch.cuda.device_count()):
+            print(f"dev {dev}, torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(dev)/1024/1024/1024))
+            print(f"dev {dev}, torch.cuda.memory_reserved: %fGB"%(torch.cuda.memory_reserved(dev)/1024/1024/1024))
+            print(f"dev {dev}, torch.cuda.max_memory_reserved: %fGB"%(torch.cuda.max_memory_reserved(dev)/1024/1024/1024))
+            
+        print(f'Loaded model onto device: {policy.device}')
+        
+        return policy
+        
+        
                 
     def create_policy(self, model_name, dtype, config, use_lora:bool=False,
                       lora_rank:int=8, lora_alpha:int=32, lora_dropout:float=0.0):
@@ -88,6 +166,14 @@ class ModelGenerator:
             #Apply lora config to policy model:
             policy = get_peft_model(policy, loraconfig)
             policy = self.manually_map_lora_to_dtype(policy, getattr(torch,dtype))
+        
+            
+        print('Current GPU usage')
+        
+        for dev in range(torch.cuda.device_count()):
+            print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(dev)/1024/1024/1024))
+            print("torch.cuda.memory_reserved: %fGB"%(torch.cuda.memory_reserved(dev)/1024/1024/1024))
+            print("torch.cuda.max_memory_reserved: %fGB"%(torch.cuda.max_memory_reserved(dev)/1024/1024/1024))
             
         print(f'Loaded model onto device: {policy.device}')
         
@@ -148,7 +234,7 @@ class ModelGenerator:
         models : dict
             A dictionary of policy models
         """
-                
+              
         if config.loss.name == 'sft':
             
             sft_model = self.create_policy(config.model.name_or_path, 

@@ -1,0 +1,27 @@
+# @package _global_
+defaults:
+  - override /model: tiny-mistral
+  - override /data_selection: uniform
+  - override /loss: dpo
+
+datasets:
+ - hh 
+
+local_dirs:
+ - test_outputs
+
+loss:
+ beta: 0.1
+
+exp_name: test_sft_tiny_mistral_run
+gradient_accumulation_steps: 2 
+batch_size: 10 
+eval_batch_size: 10 
+trainer: BasicTrainer 
+sample_during_eval: false
+
+wandb:
+ enabled: false
+
+test_dataset: true
+selected_batch_size: 2

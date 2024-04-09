@@ -1,0 +1,7 @@
+_target_: src.data_selection.DPORHOLossSelection
+
+#model state dict paths
+ft_state_dict_path: null
+sft_state_dict_path: null
+
+#We can use the following +model@data_selection.model=tiny-mistral' to use model configs in this element...
