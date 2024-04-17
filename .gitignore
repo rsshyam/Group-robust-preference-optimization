@@ -3,7 +3,7 @@
 *.log
 *__pycache__
 *.cache
-
+*questions_by_country*.png
 # Specific Folders #
 ####################
 

@@ -7,7 +7,7 @@ import os
 import hydra
 import torch.multiprocessing as mp
 from omegaconf import OmegaConf, DictConfig
-import src.trainers as trainers
+from src.trainers_factory import get_trainer
 import wandb
 import json
 import socket
@@ -46,10 +46,9 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
             name=config.exp_name,
         )
 
-    TrainerClass = getattr(trainers, config.trainer)
+    #TrainerClass = getattr(trainers, config.trainer)
     print(f'Creating trainer on process {rank} with world size {world_size}')
-    trainer = TrainerClass(policy, config, config.seed, config.local_run_dir, reference_model=reference_model,
-                           data_selector=data_selector, rank=rank, world_size=world_size)
+    trainer=get_trainer(config.trainer,policy, config, config.seed, config.local_run_dir, reference_model=reference_model,data_selector=data_selector, rank=rank, world_size=world_size)
 
     trainer.train()
     trainer.save()
