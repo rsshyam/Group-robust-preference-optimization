@@ -2,6 +2,7 @@ import datasets
 import torch
 from torch.utils.data import DataLoader, Dataset
 from src.utils import get_local_dir, TemporarilySeededRandom
+from src.groupstuff.group_dataset import GroupDataset
 from torch.nn.utils.rnn import pad_sequence
 from collections import defaultdict
 import tqdm
@@ -9,7 +10,8 @@ import random
 from bs4 import BeautifulSoup, NavigableString
 import numpy as np
 from typing import Dict, List, Optional, Iterator, Callable, Union, Tuple
-
+from src.groupstuff.data_processing import get_oqa,get_oqa_group,get_hh_datasets
+from src.groupstuff.global_opinion_data_processing import get_goqa
 
 def extract_anthropic_prompt(prompt_and_response):
     """Extract the anthropic prompt from a prompt and response pair."""
@@ -160,14 +162,24 @@ def get_hh(split: str, silent: bool = False, cache_dir: str = None) -> Dict[str,
     return data
 
 
-def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = None, test:bool = False):
+def get_dataset(name: str, split: str, train_frac: float = 0.8, silent: bool = False, cache_dir: str = None, test:bool = False):
     """Load the given dataset by name. Supported by default are 'shp', 'hh', and 'se'."""
     if name == 'shp':
-        data = get_shp(split, silent=silent, cache_dir=cache_dir)
+        data = get_shp(split=split, silent=silent, cache_dir=cache_dir)
     elif name == 'hh':
-        data = get_hh(split, silent=silent, cache_dir=cache_dir)
+        data = get_hh(split=split, silent=silent, cache_dir=cache_dir)
     elif name == 'se':
-        data = get_se(split, silent=silent, cache_dir=cache_dir)
+        data = get_se(split=split, silent=silent, cache_dir=cache_dir)
+    elif 'GOqMa' in name:
+        group_id=int(name.split('_')[-1])
+        data=get_goqa(split=split,train_frac= train_frac,group_id= group_id,multi_response=True, silent=silent, cache_dir=cache_dir)
+    elif 'goqa' in name:
+        group_id=int(name.split('_')[-1])
+        data=get_goqa(split=split,train_frac=train_frac,group_id= group_id,multi_response=False, silent=silent, cache_dir=cache_dir)
+    elif name in ['hel','helon','helraj','har']:
+        data = get_hh_datasets(split, variant=[name], silent=silent, cache_dir=cache_dir)
+    elif name == 'heltot':
+        data = get_hh_datasets(split, variant=['hel','helon','helraj'], silent=silent, cache_dir=cache_dir)
     else:
         raise ValueError(f"Unknown dataset '{name}'")
 
@@ -184,7 +196,6 @@ def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = No
         print('Pruned test data config')
 
     return data
-
 
 def get_collate_fn(tokenizer) -> Callable[[List[Dict]], Dict[str, Union[List, torch.Tensor]]]:
     """Returns a collate function for the given tokenizer.
@@ -220,13 +231,13 @@ def get_collate_fn(tokenizer) -> Callable[[List[Dict]], Dict[str, Union[List, to
     return collate_fn
 
 
-def tokenize_batch_element(prompt: str, chosen: str, rejected: str, truncation_mode: str, tokenizer, max_length: int, max_prompt_length: int) -> Dict:
+def tokenize_batch_element(prompt: str, chosen: str, rejected: str, truncation_mode: str, tokenizer, max_length: int, max_prompt_length: int, group: int=None) -> Dict:
     """Tokenize a single batch element.
-    
+
        At this stage, we don't convert to PyTorch tensors yet; we just handle the truncation
          in case the prompt + chosen or prompt + rejected responses is/are too long. First
          we truncate the prompt; if we're still too long, we truncate the chosen/rejected.
-       
+
        We also create the labels for the chosen/rejected responses, which are of length equal to
          the sum of the length of the prompt and the chosen/rejected response, with -100 for the
          prompt tokens.
@@ -276,6 +287,10 @@ def tokenize_batch_element(prompt: str, chosen: str, rejected: str, truncation_m
     batch['rejected'] = prompt + rejected
     batch['chosen_response_only'] = chosen
     batch['rejected_response_only'] = rejected
+    #print('element',group)
+    #print('element wth group')
+    if group is not None:
+        batch['group']=group
 
     for k, toks in {'chosen': chosen_sequence_tokens, 'rejected': rejected_sequence_tokens, 'prompt': prompt_tokens}.items():
         for type_key, tokens in toks.items():
@@ -284,6 +299,167 @@ def tokenize_batch_element(prompt: str, chosen: str, rejected: str, truncation_m
             batch[f'{k}_{type_key}'] = tokens
 
     return batch
+
+
+def process_dataset(dataset: Dict, 
+                    truncation_mode: str, 
+                    sep_pairs: bool, 
+                    unique_prompts: bool,
+                    group_handling: bool = False, 
+                    group_id: Optional[int] = None):
+    """
+    Process the dataset to prepare data for batching, considering separation of pairs and group handling.
+
+    Args:
+        dataset: The dataset to process.
+        truncation_mode: Truncation mode to apply ('keep_start' or 'keep_end').
+        sep_pairs: Whether to separate pairs into individual items.
+        group_handling: Whether group-specific logic is enabled.
+        group_id: Optional identifier for the data group.
+
+    Returns:
+        A list of processed dataset items ready for batching.
+    """
+    flat_data = []
+    for prompt, data in dataset.items():
+        # Process based on separation of pairs and group handling
+        if len(data['pairs']) > 1 and sep_pairs:
+            for pair_index, pair in enumerate(data['pairs']):
+                responses = [data['responses'][pair[0]], data['responses'][pair[1]]]
+                # Include group_id if group_handling is True
+                data_tuple = (prompt, responses, [(0, 1)], data['sft_target'], truncation_mode)
+                if group_handling:
+                    flat_data.append((*data_tuple, group_id))
+                    #print((*data_tuple, group_id))
+                else:
+                    flat_data.append(data_tuple)
+                if unique_prompts:
+                    break
+        else:
+            data_tuple = (prompt, data['responses'], data['pairs'], data['sft_target'], truncation_mode)
+            if group_handling:
+                flat_data.append((*data_tuple, group_id))
+                #print((*data_tuple, group_id))
+            else:
+                flat_data.append(data_tuple)
+    return flat_data
+
+def transform_weighted_item(prompt, responses, pairs, sft_target, truncation_mode, group_id):
+    """
+    Example transformation function for items from a weighted iterable,
+    adjusting them to match the structure expected by the processing logic.
+    """
+    # Transform the item to match the expected structure (prompt, responses, pairs, etc.)
+    # This is placeholder logic and should be replaced with actual transformation code.
+    prompt=prompt[0]#to remove tuple
+    #print(prompt,'prompt')
+    tresponses=[]
+    for r in responses:
+        tresponses.append(r[0])#to remove tuple
+    responses=tresponses
+    tpairs=[]
+    for p in pairs:
+        tpairs.append(tuple(q.item() for q in p))#to remove tensored versions
+    pairs=tpairs
+    sft_target=sft_target[0]#to remove tuple
+    #print(sft_target)
+    truncation_mode=truncation_mode[0]#to remove tuple
+    #
+    #print(truncation_mode)
+    group_id=group_id.item()
+    return prompt, responses, pairs, sft_target, truncation_mode, group_id
+
+def process_batches(flat_data, batch_size, collate_fn, tokenizer, max_length, max_prompt_length, sft_mode, n_examples,n_epochs, split, silent,shuffle, permutation_seeds, unique_prompts, group_handling, weighted,n_groups):
+    """
+    Processes data into batches and yields them. Handles both weighted and non-weighted scenarios.
+
+    Args:
+        flat_data: The preprocessed data ready for batching.
+        batch_size: The size of each batch.
+        collate_fn: Function to collate data points into batches.
+        tokenizer: The tokenizer to use for processing text.
+        max_length: Maximum sequence length.
+        max_prompt_length: Maximum prompt length.
+        sft_mode: Whether to use SFT mode for tokenization.
+        n_examples: The number of examples to process. If None, processes all examples.
+        split: The data split being used (e.g., 'train', 'test').
+        silent: If True, does not print progress messages.
+        is_train: Indicates if the current processing is for training data.
+        weighted: Indicates if weighted sampling should be used.
+    """
+    epoch_idx = 0
+    example_idx = 0
+    done = False
+    while not done:
+        if n_epochs is not None and epoch_idx >= n_epochs:
+            if not silent:
+                print(f'Finished generating {n_examples} examples on {split} split')
+            break
+        # Shuffle data if required
+
+        if shuffle:
+            print(next(permutation_seeds),'next seed')
+            with TemporarilySeededRandom(next(permutation_seeds)):
+                random.shuffle(flat_data)
+
+        if group_handling and weighted:
+            # Replace with your actual weighted sampling logic
+            # For example, use a DataLoader with a WeightedRandomSampler
+            iterable = GroupDataset(flat_data,n_groups).get_loader()  # Assuming this is a DataLoader
+        else:
+            iterable = flat_data
+
+        batch = []
+        # Process each data point into a batch
+        for data_point in iterable:
+            if done:
+                break
+
+            prompt, responses, pairs, sft_target, truncation_mode = data_point[:5]
+            #print(data_point)
+            group_id = data_point[5] if group_handling else None
+
+            # Adjust for weighted scenario unpacking
+            if group_handling and weighted:
+                # Example transformation function to match the non-weighted structure
+                prompt, responses, pairs, sft_target, truncation_mode, group_id = transform_weighted_item(prompt, responses, pairs, sft_target, truncation_mode, group_id)
+            # Specific logic for SFT mode
+            if sft_mode:
+                batch_element = tokenize_batch_element(prompt, sft_target, sft_target, truncation_mode, tokenizer, max_length, max_prompt_length, group=group_id if group_handling else None)
+                batch_element = {k: v for k, v in batch_element.items() if 'rejected' not in k}
+                batch.append(batch_element)
+                example_idx += 1
+                if len(batch) == batch_size:
+                    #print(batch)
+                    yield collate_fn(batch)
+                    if n_examples is not None and example_idx >= n_examples:
+                        if not silent:
+                            print(f'Finished generating {n_examples} examples on {split} split')
+                        done = True
+                    batch = []
+            else:
+                # Standard processing
+                for p in pairs:
+                    if done:
+                        break
+                    batch_element = tokenize_batch_element(prompt, responses[p[0]], responses[p[1]], truncation_mode, tokenizer, max_length, max_prompt_length, group=group_id if group_handling else None)
+                    batch.append(batch_element)
+                    example_idx += 1
+                    if len(batch) == batch_size:
+                        yield collate_fn(batch)
+                        if n_examples is not None and example_idx >= n_examples:
+                            if not silent:
+                                print(f'Finished generating {n_examples} examples on {split} split')
+                            done = True
+                        batch = []
+                    if unique_prompts:
+                        break
+
+        if done:
+            break
+
+        epoch_idx += 1
+
 
 
 def get_batch_iterator(names: List[str],
@@ -296,11 +472,17 @@ def get_batch_iterator(names: List[str],
                        sft_mode: bool = False,
                        n_epochs: Optional[int] = None,
                        n_examples: Optional[int] = None,
-                       seed:int = 0,
+                       seed: int = 0,
                        silent: bool = False,
                        cache_dir: Optional[str] = None,
-                       test_dataset: bool = False) -> Iterator[Dict]:
-    """Get an iterator over batches of data. Stops after n_epochs or n_examples, whichever comes first.
+                       test_dataset: bool = False,
+                       group_handling: bool = False,
+                       train_frac: float=0.8,
+                       sep_pairs: bool = False,
+                       weighted: bool = False,
+                       mode: str = 'batch_iterator') -> Iterator[Dict]:
+    """Get an iterator over batches of data with optional group handling. 
+    Stops after n_epochs or n_examples, whichever comes first.
 
     Args:
         names: Names of datasets to use.
@@ -310,77 +492,50 @@ def get_batch_iterator(names: List[str],
         shuffle: Whether to shuffle the data after each epoch.
         max_length: Maximum length of the combined prompt + response.
         max_prompt_length: Maximum length of the prompt.
-        sft_mode: Whether to use SFT mode (i.e., return sft_target instead of chosen/rejected). In sft mode, we just return chosen_input_ids, but they contain the sft_target.
+        sft_mode: Whether to use SFT mode.
         n_epochs: Number of epochs to run for. This or n_examples must be specified.
         n_examples: Number of examples to run for. This or n_epochs must be specified.
         seed: Random seed.
         silent: Whether to silence the progress bar(s).
         cache_dir: Directory to cache the datasets in.
+        test_dataset: Flag to indicate if using a test dataset.
+        group_handling: Flag to enable group-based data handling.
+        sep_paris: Flag to enable separation of response pairs corresponding to a single prompt
     """
+
     assert n_epochs is not None or n_examples is not None, "Must specify either n_epochs or n_examples"
     if silent:
         datasets.logging.disable_progress_bar()
         datasets.logging.set_verbosity_error()
-
+    if 'gen' in split:
+        split=split.split('_')[0]
+        unique_prompts=True
+    else:
+        unique_prompts=False
     with TemporarilySeededRandom(seed):
-        permutation_seeds = iter(np.random.randint(0, 2**20, size=1000000))
+        permutation_seeds = iter(np.random.randint(0, 2**32, size=1000000))
         flat_data = []
+        group_counts=[]
         for name in names:
-            truncation_mode = 'keep_end' if name == 'hh' else 'keep_start'
-            for prompt, data in get_dataset(name, split, silent=silent, cache_dir=cache_dir, test=test_dataset).items():
-                flat_data.append((prompt, data['responses'], data['pairs'], data['sft_target'], truncation_mode))
+            truncation_mode = 'keep_end' if name in ['hh', 'har', 'hel', 'helon', 'helrej', 'heltot'] else 'keep_start'
+            if mode=='batch_iterator':
+                dataset = get_dataset(name=name, train_frac=train_frac, split=split, silent=silent, cache_dir=cache_dir, test=test_dataset)
+                group_id = names.index(name) if group_handling else None
+                flat_data.extend(process_dataset(dataset, truncation_mode, sep_pairs,unique_prompts,group_handling,group_id))
+            elif mode=='count_groups':
+                g_len=0
+                for prompt, data in get_dataset(name=name, train_frac=train_frac, split=split, silent=silent, cache_dir=cache_dir, test=test_dataset).items():
+                    g_len+= 1 if unique_prompts else len(data['pairs'])
+                group_counts.append(g_len)
+    
+    if mode=='count_groups':
+        return group_counts
 
     collate_fn = get_collate_fn(tokenizer)
+    n_groups=len(names)
+    return process_batches(flat_data, batch_size, collate_fn, tokenizer, max_length, max_prompt_length, sft_mode, n_examples, n_epochs, split, silent, shuffle, permutation_seeds, unique_prompts, group_handling, weighted,n_groups)
 
-    epoch_idx = 0
-    example_idx = 0
-    done = False
-    while True:
-        if n_epochs is not None and epoch_idx >= n_epochs:
-            if not silent:
-                print(f'Finished generating {n_epochs} epochs on {split} split')
-            break
-        if shuffle:
-            with TemporarilySeededRandom(next(permutation_seeds)):
-                random.shuffle(flat_data)
-
-        batch = []
-        for prompt, responses, pairs, sft_target, truncation_mode in flat_data:
-            if done:
-                break
-            if sft_mode:
-                batch_element = tokenize_batch_element(prompt, sft_target, sft_target, truncation_mode, tokenizer, max_length, max_prompt_length)
-                batch_element = {k: v for k, v in batch_element.items() if 'rejected' not in k}
-                batch.append(batch_element)
-                example_idx += 1
-                if len(batch) == batch_size:
-                    yield collate_fn(batch)
-                    if n_examples is not None and example_idx >= n_examples:
-                        if not silent:
-                            print(f'Finished generating {n_examples} examples on {split} split')
-                        done = True
-
-                    batch = []
-            else:
-                for p in pairs:
-                    if done:
-                        break
-                    batch_element = tokenize_batch_element(prompt, responses[p[0]], responses[p[1]], truncation_mode, tokenizer, max_length, max_prompt_length)
-                    batch.append(batch_element)
-                    example_idx += 1
-                    if len(batch) == batch_size:
-                        yield collate_fn(batch)
-                        if n_examples is not None and example_idx >= n_examples:
-                            if not silent:
-                                print(f'FINISHED {n_examples} EXAMPLES on {split} split')
-                            done = True
-                        batch = []
-        if done:
-            break
-
-        epoch_idx += 1
-
-
+    
 def strings_match_up_to_spaces(str_a: str, str_b: str) -> bool:
     """Returns True if str_a and str_b match up to spaces, False otherwise."""
     for idx in range(min(len(str_a), len(str_b)) - 2):
