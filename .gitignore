@@ -9,3 +9,4 @@
 
 test_outputs/   # created by test.py
 outputs/         # created by hydra
+src/__pycache__
