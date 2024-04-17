@@ -72,7 +72,7 @@ n_epochs: 1
 n_examples: null
 
 # the number of examples to evaluate on (and sample from, if sample_during_eval is true)
-n_eval_examples: 256
+n_eval_examples: 128
 
 # the trainer class to use (e.g. BasicTrainer, FSDPTrainer, TensorParallelTrainer)
 trainer: BasicTrainer
@@ -101,6 +101,39 @@ test_dataset: False
 #Active Learning default settings:
 active: False
 selected_batch_size: null
+
+train_frac: 0.8
+
+#group addition
+#robust additions
+group_handling: False
+#ref_sample: false
+eval_train_data: False
+eval_train_full: False
+#save_dir: '/home/uceesr4/viraj_dpo/direct-preference-optimization/samples_lora'
+# how many model samples to generate during evaluation
+#n_eval_model_samples: 128
+# whether to eval at the very beginning of training
+use_ref: true
+#do_first_eval_gen: False
+#split: 100
+#eval_train_every: 160000
+#save_every: 16000
+eval_full: False
+eval_only_once: False
+#step_size: 0.01
+importance_sampling: False
+imp_weights: False
+weighted_batches: False
+adj: 0
+#weight_decay: 0
+dpowts: False
+#n_eval_metrics: 1
+#check_all_responses: False
+eval_train_end: True
+sep_pairs: False
+
+max_train_examples: null
 
 defaults:
 - _self_
