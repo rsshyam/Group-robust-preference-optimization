@@ -46,6 +46,7 @@ import time
 import json
 import functools
 from typing import Optional, Dict, List, Union, Tuple
+import csv
 
 
 class BasicTrainer(object):
@@ -208,11 +209,12 @@ class BasicTrainer(object):
                 self.policy.eval()
 
                 all_eval_metrics = defaultdict(list)
+
                 if self.config.sample_during_eval:
                     all_policy_samples, all_reference_samples = [], []
-                    policy_text_table = wandb.Table(columns=["step", "prompt", "sample"])
+                    policy_text_table = wandb.Table(columns=["step", "prompt", "sample","correct response"])
                     if self.config.loss.name in {'dpo', 'ipo'}:
-                        reference_text_table = wandb.Table(columns=["step", "prompt", "sample"])
+                        reference_text_table = wandb.Table(columns=["step", "prompt", "sample","correct response"])
 
                 for eval_batch in (tqdm.tqdm(self.eval_batches, desc='Computing eval metrics') if self.rank == 0 else self.eval_batches):
                     local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)
@@ -225,10 +227,10 @@ class BasicTrainer(object):
                 if self.config.sample_during_eval:
                     if self.config.n_eval_model_samples < self.config.eval_batch_size:
                         rank0_print(f'Warning: n_eval_model_samples ({self.config.n_eval_model_samples}) < eval_batch_size ({self.config.eval_batch_size}). Sampling from the first complete eval batch of prompts.')
-                        sample_batches = self.eval_batches[:1]
+                        sample_batches = self.gen_batches[:1]
                     else:
                         n_sample_batches = self.config.n_eval_model_samples // self.config.eval_batch_size
-                        sample_batches = self.eval_batches[:n_sample_batches]
+                        sample_batches = self.gen_batches[:n_sample_batches]
                     for eval_batch in (tqdm.tqdm(sample_batches, desc='Generating samples...') if self.rank == 0 else sample_batches):
                         local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)
                         policy_samples, reference_samples = self.get_batch_samples(local_eval_batch)
@@ -253,9 +255,17 @@ class BasicTrainer(object):
                     wandb.log(mean_eval_metrics, step=self.example_counter)
 
                     if self.config.sample_during_eval:
-                        wandb.log({"policy_samples": policy_text_table}, step=self.example_counter)
-                        if self.config.loss.name in {'dpo', 'ipo'}:
-                            wandb.log({"reference_samples": reference_text_table}, step=self.example_counter)
+                            save_path = os.path.join(self.run_dir, f'step-{self.example_counter}_samples')
+                            #rank0_print(f'creating checkpoint to write samples to {output_dir}...')
+                            rank0_print(f'writing table to {save_path}...')
+                            with open(save_path, mode='w', newline='') as file:
+                                writer = csv.writer(file)
+                                writer.writerow(policy_text_table.columns)
+                                for i,row in policy_text_table.iterrows():
+                                    writer.writerow(row)
+                            wandb.log({f"policy_samples": policy_text_table}, step=self.example_counter)
+                            if self.config.loss.name in {'dpo', 'ipo'}:
+                                wandb.log({"reference_samples": reference_text_table}, step=self.example_counter)
 
                 if self.example_counter > 0:
                     if self.config.debug:
