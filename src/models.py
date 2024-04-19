@@ -47,7 +47,7 @@ class ModelGenerator:
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=dtype
+            bnb_4bit_compute_dtype=torch.bfloat16
         )
         
         #Load model from Huggingface:
@@ -131,7 +131,7 @@ class ModelGenerator:
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=dtype
+            bnb_4bit_compute_dtype=torch.bfloat16
         )
         
         #Load model from Huggingface:
@@ -247,6 +247,18 @@ class ModelGenerator:
             
             models = {'sft_model': sft_model}
         
+        elif config.loss.name == 'base':
+            
+            base_model = self.create_policy(config.model.name_or_path, 
+                                          config.model.policy_dtype,
+                                          config,
+                                          use_lora=config.model.use_lora,
+                                          lora_rank=config.model.lora_rank,
+                                          lora_alpha=config.model.lora_alpha,
+                                          lora_dropout=config.model.lora_dropout)
+            
+            models = {'base_model': base_model}
+            print(base_model.device,'base-model-device')
         elif config.loss.name in ['dpo', 'ipo']:
             
             #create main policy:

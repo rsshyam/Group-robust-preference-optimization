@@ -81,7 +81,7 @@ def plot_questions_by_country(df, title_suffix=""):
     plt.savefig(f'questions_by_country{title_suffix}.png')
     plt.close()
 
-def create_goqa_data(df,split,train_frac=0.8, multi_response=False):
+def create_goqa_data(df,split,train_frac=0.8, multi_pair=False,n_pairs=4):
     df_train=df.sample(frac=0.8,random_state=42)
     df_test=df.drop(df_train.index)
     if split=='train':
@@ -98,29 +98,42 @@ def create_goqa_data(df,split,train_frac=0.8, multi_response=False):
     data = defaultdict(lambda: defaultdict(list))
     for group_name, group_data in grouped:
         for qkey, sub_group in group_data.groupby('qkey'):
+
+            question = sub_group['question'].values[0]
+
+            # Process options, excluding any invalid ones
+            options = sub_group['options'].values[0]
+            #####treat refused option separately-----options = [opt for opt in options if opt != "Refused"]
+
+            # Construct the prompt
+            prompt = f"Opinion of people in {group_name} on: {question}\nPlease select the best response:"
+
+            # Generate the full prompt with options
+            letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[:len(options)]
+            for opt, letter in zip(options, letters):
+                prompt += f"\n{letter}. {opt}"
             #print(sub_group)
+            responses = [letter for letter in letters[:len(options)]]
+            
             prob_y = torch.tensor(np.stack(sub_group['prob_y'].values), dtype=torch.float).squeeze()
-            prompt = f"{sub_group['question'].values[0]} Opinion of people in country: {group_name} is"
-            correct_response_index = torch.argmax(prob_y)
-            correct_response = sub_group['options'].values[0][correct_response_index]
+            ranks=torch.argsort(prob_y)
+            pairs = [(ranks[i], ranks[j]) for i in range(len(ranks)) for j in range(i)]
+            correct_response_index = ranks[-1]
+            correct_response = options[ranks[-1]]
 
             data[prompt]['sft_target'] = correct_response
-            if multi_response:
-                for i, option in enumerate(sub_group['options'].values[0]):
-                    if i != correct_response_index:
-                        data[prompt]['pairs'].append((len(data[prompt]['responses']), len(data[prompt]['responses'])+1))
-                        data[prompt]['responses'].extend([correct_response, option])
+            data[prompt]['responses'] = responses
+            if multi_pair:
+                data[prompt]['pairs']=random.sample(pairs,min(n_pairs,len(pairs)))
             else:
-                wrong_indices = [i for i in range(len(sub_group['options'].values[0])) if i != correct_response_index]
+                wrong_indices = [i for i in range(len(options)) if i != correct_response_index]
                 if wrong_indices:
-                    wrong_option_index = np.random.choice(wrong_indices)
-                    wrong_response = sub_group['options'].values[0][wrong_option_index]
-                    data[prompt]['pairs'].append((len(data[prompt]['responses']), len(data[prompt]['responses'])+1))
-                    data[prompt]['responses'].extend([correct_response, wrong_response])
+                    wrong_response_index = random.choice(wrong_indices)
+                    data[prompt]['pairs']=[(correct_response_index,wrong_response_index)]
     #print(len(data))
     return data
 
-def get_goqa(split: str, train_frac: float = 0.8, group_id: int = None, multi_response: bool = False, silent: bool = False, cache_dir: str = None):
+def get_goqa(split: str, train_frac: float = 0.8, group_id: int = None, multi_pair: bool = False,n_pairs: int=4, silent: bool = False, cache_dir: str = None):
     if group_id==None:
         group_filter = COUNTRIES
     else:
@@ -129,7 +142,7 @@ def get_goqa(split: str, train_frac: float = 0.8, group_id: int = None, multi_re
     df = process_data_frame(df, selections, group_filter, options)
     plot_questions_by_country(df, title_suffix=f" {split} with groups {' '.join(group_filter)}")
     #print(group_id,group_filter)
-    return create_goqa_data(df=df,split=split,train_frac=train_frac,multi_response= multi_response)
+    return create_goqa_data(df=df,split=split,train_frac=train_frac,multi_pair= multi_pair,n_pairs=n_pairs)
 
 
 

@@ -128,8 +128,11 @@ class BasicTrainer(object):
            TODO: Can we get rid of this?
         """
         concatenated_batch = concatenated_inputs(batch)
+        print(model.device,'model',model(concatenated_batch['concatenated_input_ids'], attention_mask=concatenated_batch['concatenated_attention_mask']).logits.device,'beforeto')
         all_logits = model(concatenated_batch['concatenated_input_ids'], attention_mask=concatenated_batch['concatenated_attention_mask']).logits.to(torch.float32)
+        print(all_logits.device)
         all_logps = _get_batch_logps(all_logits, concatenated_batch['concatenated_labels'], average_log_prob=False)
+        print(all_logps.device)
         chosen_logps = all_logps[:batch['chosen_input_ids'].shape[0]]
         rejected_logps = all_logps[batch['chosen_input_ids'].shape[0]:]
         return chosen_logps, rejected_logps
@@ -175,6 +178,22 @@ class BasicTrainer(object):
             policy_chosen_logps = _get_batch_logps(policy_chosen_logits, batch['chosen_labels'], average_log_prob=False)
 
             losses = -policy_chosen_logps
+        
+        elif loss_config.name == 'base':
+            #print(self.policy.device,'policy')
+            policy_chosen_logps, policy_rejected_logps = self.concatenated_forward(self.policy, batch)
+            logps_accuracies= (policy_chosen_logps > policy_rejected_logps).float()
+            #print(logps_accuracies.device,'accu')
+            losses=-logps_accuracies
+
+            gathered_tensors = {
+                'logps_accuracies': all_gather_if_needed(logps_accuracies, self.rank, self.world_size),
+                'policy_rejected_logps': policy_rejected_logps.detach()
+            }
+            
+            metrics.update({
+                f'{k}_{train_test}': v.cpu().numpy().tolist() for k, v in gathered_tensors.items()
+            })
 
         policy_chosen_logps = all_gather_if_needed(policy_chosen_logps.detach(), self.rank, self.world_size)
         metrics[f'logps_{train_test}/chosen'] = policy_chosen_logps.cpu().numpy().tolist()
@@ -274,6 +293,8 @@ class BasicTrainer(object):
                         output_dir = os.path.join(self.run_dir, f'step-{self.example_counter}')
                         rank0_print(f'creating checkpoint to write to {output_dir}...')
                         self.save(output_dir, mean_eval_metrics)
+            if self.config.eval_only_once==True:
+                return
             #### END EVALUATION ####
 
             #### POINT SELECTION ####            

@@ -34,6 +34,7 @@ local_dirs:
   - /scr-ssd
   - /scr
   - .cache
+  - /scratch/uceesr4/.cache
 
 # whether or not to generate samples during evaluation; disable for FSDP/TensorParallel
 #   is recommended, because they are slow

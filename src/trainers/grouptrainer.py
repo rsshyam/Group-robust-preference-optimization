@@ -229,19 +229,64 @@ class GroupTrainer(BasicTrainer):
             loss_kwargs=self.get_loss_kwargs(loss_config)
             losses, chosen_rewards, rejected_rewards = preference_loss(policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, **loss_kwargs, loss_name=loss_config.name, batch=batch)
             reward_accuracies = (chosen_rewards > rejected_rewards).float()
-            actual_loss,metrics=self.get_group_metrics(losses,chosen_rewards,rejected_rewards,reward_accuracies,loss_config,train_test, group_idx=batch['group'])
+            #actual_loss,metrics=self.get_group_metrics(losses,chosen_rewards,rejected_rewards,reward_accuracies,loss_config,train_test, group_idx=batch['group'])
+            group_idx=batch['group']
+            group_loss, group_count = self.compute_group_metric(losses, group_idx, self.divide_by_totalcount)
+            group_acc, group_count = self.compute_group_sum_metric(reward_accuracies, group_idx)
+            if loss_config.name in {'dpo', 'ipo'}:
+                actual_loss=losses.mean()
+                weights=torch.ones(self.n_groups).float().cuda()/self.n_groups
+            elif loss_config.name in {'rdpo', 'ripo'}:
+                actual_loss, weights = self.compute_robust_loss(group_loss)
+
+            # Gather all necessary data across devices
+            tensors_to_gather = {
+                'chosen_rewards': chosen_rewards,
+                'rejected_rewards': rejected_rewards,
+                'reward_accuracies': reward_accuracies,
+                'group_acc': group_acc.unsqueeze(0),
+                'group_loss': group_loss.detach().unsqueeze(0),
+                'group_count': group_count.unsqueeze(0),
+                'weights': weights.detach().unsqueeze(0),
+                'policy_rejected_logps': policy_rejected_logps.detach(),
+            }
+            gathered_tensors = {k: all_gather_if_needed(v, self.rank, self.world_size) for k, v in tensors_to_gather.items()}
+            
         elif loss_config.name == 'sft':
             policy_chosen_logits = self.policy(batch['chosen_input_ids'], attention_mask=batch['chosen_attention_mask']).logits.to(torch.float32)
             policy_chosen_logps = _get_batch_logps(policy_chosen_logits, batch['chosen_labels'], average_log_prob=False)
 
             losses = -policy_chosen_logps
             actual_loss=losses.mean()
+            
+        elif loss_config.name == 'base':
+            print(self.policy.device,'policy')
+            policy_chosen_logps, policy_rejected_logps = self.concatenated_forward(self.policy, batch)
+            logps_accuracies= (policy_chosen_logps > policy_rejected_logps).float()
+            print(logps_accuracies.device,'accu')
+            losses=-logps_accuracies
+            group_idx=batch['group']
+            group_base_acc, group_count = self.compute_group_sum_metric(logps_accuracies, group_idx)
+            actual_loss=losses.mean()
 
+            gathered_tensors = {
+                'logps_accuracies': all_gather_if_needed(logps_accuracies, self.rank, self.world_size),
+                'group_base_acc': all_gather_if_needed(group_base_acc.unsqueeze(0), self.rank, self.world_size),
+                'group_count': all_gather_if_needed(group_count.unsqueeze(0), self.rank, self.world_size),
+                'policy_rejected_logps': policy_rejected_logps.detach()
+            }
+            
+        metrics.update({
+            f'{k}_{train_test}': v.cpu().numpy().tolist() for k, v in gathered_tensors.items()
+        })
         policy_chosen_logps = all_gather_if_needed(policy_chosen_logps.detach(), self.rank, self.world_size)
         metrics[f'logps_{train_test}/chosen'] = policy_chosen_logps.cpu().numpy().tolist()
 
         all_devices_losses = all_gather_if_needed(losses.detach(), self.rank, self.world_size)
         metrics[f'loss/{train_test}'] = all_devices_losses.cpu().numpy().tolist()
+
+        all_devices_actual_loss = all_gather_if_needed(actual_loss.detach(), self.rank, self.world_size)
+        metrics[f'actual_loss/{train_test}'] = all_devices_actual_loss.cpu().numpy().tolist()
 
         return actual_loss, metrics
     
@@ -258,39 +303,7 @@ class GroupTrainer(BasicTrainer):
         else:
             raise ValueError(f'unknown loss {loss_config.name}')
         return loss_kwargs
-    
-    def get_group_metrics(self,losses: torch.FloatTensor, chosen_rewards: torch.FloatTensor, rejected_rewards: torch.FloatTensor, reward_accuracies: torch.FloatTensor, loss_config: DictConfig, train_test: bool, group_idx: torch.FloatTensor):
-        metrics={}
-        group_loss, group_count = self.compute_group_metric(losses, group_idx, self.divide_by_totalcount)
-        group_acc, group_count = self.compute_group_metric_sum(reward_accuracies, group_idx)
-        if loss_config.name in {'dpo', 'ipo'}:
-            actual_loss=losses.mean()
-            weights=torch.ones(self.n_groups).float().cuda()/self.n_groups
-        elif loss_config.name in {'rdpo', 'ripo'}:
-            actual_loss, weights = self.compute_robust_loss(group_loss)
 
-        chosen_rewards = all_gather_if_needed(chosen_rewards, self.rank, self.world_size)
-        rejected_rewards = all_gather_if_needed(rejected_rewards, self.rank, self.world_size)
-        reward_accuracies = all_gather_if_needed(reward_accuracies, self.rank, self.world_size)
-
-        group_acc=all_gather_if_needed(group_acc.unsqueeze(0),self.rank,self.world_size)
-        group_count=all_gather_if_needed(group_count.unsqueeze(0),self.rank,self.world_size)
-        weights=all_gather_if_needed(weights.unsqueeze(0),self.rank,self.world_size)
-        
-        metrics[f'rewards_{train_test}/chosen'] = chosen_rewards.cpu().numpy().tolist()
-        metrics[f'rewards_{train_test}/rejected'] = rejected_rewards.cpu().numpy().tolist()
-        metrics[f'rewards_{train_test}/accuracies'] = reward_accuracies.cpu().numpy().tolist()
-        metrics[f'rewards_{train_test}/margins'] = (chosen_rewards - rejected_rewards).cpu().numpy().tolist()
-
-
-        metrics[f'rewards_{train_test}/group_acc'] = group_acc.cpu().numpy().tolist()
-        metrics[f'rewards_{train_test}/group_count'] = group_count.cpu().numpy().tolist()
-        metrics[f'rewards_{train_test}/weights'] = weights.cpu().numpy().tolist()
-
-        policy_rejected_logps = all_gather_if_needed(policy_rejected_logps.detach(), self.rank, self.world_size)
-        metrics[f'logps_{train_test}/rejected'] = policy_rejected_logps.cpu().numpy().tolist()
-
-        return actual_loss,metrics
     
     def compute_group_metric(self, losses, group_idx, divide_by_totalcount=False):
         # compute observed counts and mean loss for each group
@@ -322,6 +335,7 @@ class GroupTrainer(BasicTrainer):
         #print(group_map,'map')
         group_count = group_map.sum(1)
         #print(group_count,'count')
+        print(group_map.device,losses.view(-1).device)
         group_loss = (group_map @ losses.view(-1))
         ##print(group_loss,'loss')
         return group_loss, group_count
@@ -441,7 +455,7 @@ class GroupTrainer(BasicTrainer):
                 for microbatch_idx in range(self.config.gradient_accumulation_steps):
                     global_microbatch = slice_and_move_batch_for_device(selected_batch, microbatch_idx, self.config.gradient_accumulation_steps, self.rank)
                     local_microbatch = slice_and_move_batch_for_device(global_microbatch, self.rank, self.world_size, self.rank)
-                    loss, metrics = self.get_batch_metrics(local_microbatch, self.config.loss, train=True)
+                    loss, metrics = self.get_group_batch_metrics(local_microbatch, self.config.loss, train=True)
                     if self.config.debug==True:
                         for param in self.policy.parameters():
                             if param.grad is not None and torch.isnan(param.grad).any():
@@ -517,6 +531,7 @@ class GroupTrainer(BasicTrainer):
             #### END TRAINING ####
         # evaluate one last time after training
         #self.evaluate()
+        self.policy.eval()
         mean_eval_metrics={}
         for i in range(len(self.config.datasets)):
             mean_eval_metrics[i]=self.evaluate(eval_grp=f'test_{i}')
@@ -530,7 +545,9 @@ class GroupTrainer(BasicTrainer):
         train_test, group_id = eval_grp.split("_")
         current_batch, train = self.get_current_batch(train_test, int(group_id))
         self.log_gpu_memory("currently allocated")
-        self.policy.eval()
+        print(self.policy.device,'before')
+        #self.policy.eval()
+        print(self.policy.device,'after')
         mean_eval_metrics_1 = self.compute_metrics(current_batch, group_id, train)
         rank0_print(f'{eval_grp} after {self.example_counter}: {formatted_dict(mean_eval_metrics_1)}')
         

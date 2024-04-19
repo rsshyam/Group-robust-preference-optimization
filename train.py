@@ -101,6 +101,9 @@ def main(config: DictConfig):
     if config.loss.name == 'sft':
         policy = models.get('sft_model', None)
         reference_model = None
+    elif config.loss.name == 'base':
+        policy = models.get('base_model', None)
+        reference_model = None
     else:
         policy = models.get('policy_model', None)
         reference_model = models.get('ref_model', None)  
