@@ -54,6 +54,21 @@ from typing import Optional, Dict, List, Union, Tuple
 from src.trainers.basictrainer import BasicTrainer
 
 
+
+def get_loss_kwargs(loss_config: DictConfig):
+    if 'dpo' in loss_config.name:
+        loss_kwargs = {
+                'beta': loss_config.beta,
+                'reference_free': loss_config.get('reference_free', False),
+                'label_smoothing': loss_config.get('label_smoothing', 0),
+                'ipo': loss_config.name == 'ipo'
+            }
+    elif 'ipo' in loss_config.name:
+        loss_kwargs = {'beta': loss_config.beta, 'ipo': True}
+    else:
+        raise ValueError(f'unknown loss {loss_config.name}')
+    return loss_kwargs
+
 class GroupTrainer(BasicTrainer):
     def __init__(self, policy: nn.Module, config: DictConfig, seed: int, run_dir: str, reference_model: Optional[nn.Module] = None, data_selector: DataSelector = None, rank: int = 0, world_size: int = 1):
         """A trainer for a language model, supporting either SFT or DPO training.
@@ -132,19 +147,15 @@ class GroupTrainer(BasicTrainer):
                     self.adv_probs = 0.5*torch.ones(self.n_groups).cuda()
                     self.adv_probs = self.adv_probs.float()
                 else:
-                    #print(self.group_counts,'group_counts')
                     self.adv_probs = torch.ones(self.n_groups).float().cuda()/self.group_counts
-                    #print(self.adv_probs,'adv_probs')
                     self.adv_probs = self.adv_probs/(self.adv_probs.sum()).float()
-                    #print(self.adv_probs,'adv_probs')
             else:
                 self.adv_probs = torch.tensor(self.config.imp_weights).float().cuda()
     
     def prepare_eval_vald_iterator(self):
         data_iterator_kwargs_eval={}
-        #print(config.datasets,config.datasets)
         for i in range(len(self.config.datasets)):
-            print(self.config.datasets[i:i+1])
+            rank0_print(self.config.datasets[i:i+1])
             data_iterator_kwargs_eval[i]=dict(
             names=self.config.datasets[i:i+1],
             tokenizer=self.tokenizer,
@@ -226,31 +237,35 @@ class GroupTrainer(BasicTrainer):
             policy_chosen_logps, policy_rejected_logps = self.concatenated_forward(self.policy, batch)
             with torch.no_grad():
                 reference_chosen_logps, reference_rejected_logps = self.concatenated_forward(self.reference_model, batch)
-            loss_kwargs=self.get_loss_kwargs(loss_config)
-            losses, chosen_rewards, rejected_rewards = preference_loss(policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, **loss_kwargs, loss_name=loss_config.name, batch=batch)
+            loss_kwargs=get_loss_kwargs(loss_config)
+            losses, chosen_rewards, rejected_rewards = preference_loss(policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, **loss_kwargs)
             reward_accuracies = (chosen_rewards > rejected_rewards).float()
             #actual_loss,metrics=self.get_group_metrics(losses,chosen_rewards,rejected_rewards,reward_accuracies,loss_config,train_test, group_idx=batch['group'])
             group_idx=batch['group']
-            group_loss, group_count = self.compute_group_metric(losses, group_idx, self.divide_by_totalcount)
             group_acc, group_count = self.compute_group_sum_metric(reward_accuracies, group_idx)
             if loss_config.name in {'dpo', 'ipo'}:
                 actual_loss=losses.mean()
                 weights=torch.ones(self.n_groups).float().cuda()/self.n_groups
             elif loss_config.name in {'rdpo', 'ripo'}:
+                group_loss, group_count = self.compute_group_metric(losses, group_idx, self.config.divide_by_totalcount)
                 actual_loss, weights = self.compute_robust_loss(group_loss)
 
             # Gather all necessary data across devices
             tensors_to_gather = {
-                'chosen_rewards': chosen_rewards,
-                'rejected_rewards': rejected_rewards,
-                'reward_accuracies': reward_accuracies,
+                'chosen': chosen_rewards,
+                'rejected': rejected_rewards,
+                'accuracies': reward_accuracies,
                 'group_acc': group_acc.unsqueeze(0),
-                'group_loss': group_loss.detach().unsqueeze(0),
                 'group_count': group_count.unsqueeze(0),
                 'weights': weights.detach().unsqueeze(0),
-                'policy_rejected_logps': policy_rejected_logps.detach(),
+                'margins': chosen_rewards - rejected_rewards
             }
+            if loss_config.name in {'rdpo', 'ripo'}:
+                tensors_to_gather['group_loss']=group_loss.detach().unsqueeze(0)
             gathered_tensors = {k: all_gather_if_needed(v, self.rank, self.world_size) for k, v in tensors_to_gather.items()}
+
+            policy_rejected_logps = all_gather_if_needed(policy_rejected_logps.detach(), self.rank, self.world_size)
+            metrics[f'logps_{train_test}/rejected'] = policy_rejected_logps.cpu().numpy().tolist()
             
         elif loss_config.name == 'sft':
             policy_chosen_logits = self.policy(batch['chosen_input_ids'], attention_mask=batch['chosen_attention_mask']).logits.to(torch.float32)
@@ -258,12 +273,11 @@ class GroupTrainer(BasicTrainer):
 
             losses = -policy_chosen_logps
             actual_loss=losses.mean()
+            gathered_tensors={}
             
         elif loss_config.name == 'base':
-            print(self.policy.device,'policy')
             policy_chosen_logps, policy_rejected_logps = self.concatenated_forward(self.policy, batch)
             logps_accuracies= (policy_chosen_logps > policy_rejected_logps).float()
-            print(logps_accuracies.device,'accu')
             losses=-logps_accuracies
             group_idx=batch['group']
             group_base_acc, group_count = self.compute_group_sum_metric(logps_accuracies, group_idx)
@@ -273,71 +287,42 @@ class GroupTrainer(BasicTrainer):
                 'logps_accuracies': all_gather_if_needed(logps_accuracies, self.rank, self.world_size),
                 'group_base_acc': all_gather_if_needed(group_base_acc.unsqueeze(0), self.rank, self.world_size),
                 'group_count': all_gather_if_needed(group_count.unsqueeze(0), self.rank, self.world_size),
-                'policy_rejected_logps': policy_rejected_logps.detach()
             }
-            
-        metrics.update({
-            f'{k}_{train_test}': v.cpu().numpy().tolist() for k, v in gathered_tensors.items()
-        })
+            policy_rejected_logps = all_gather_if_needed(policy_rejected_logps.detach(), self.rank, self.world_size)
+            metrics[f'logps_{train_test}/rejected'] = policy_rejected_logps.cpu().numpy().tolist()
+        if gathered_tensors:
+            metrics.update({
+                f'rewards_{train_test}/{k}': v.cpu().numpy().tolist() for k, v in gathered_tensors.items()
+            })
         policy_chosen_logps = all_gather_if_needed(policy_chosen_logps.detach(), self.rank, self.world_size)
         metrics[f'logps_{train_test}/chosen'] = policy_chosen_logps.cpu().numpy().tolist()
 
         all_devices_losses = all_gather_if_needed(losses.detach(), self.rank, self.world_size)
         metrics[f'loss/{train_test}'] = all_devices_losses.cpu().numpy().tolist()
 
-        all_devices_actual_loss = all_gather_if_needed(actual_loss.detach(), self.rank, self.world_size)
-        metrics[f'actual_loss/{train_test}'] = all_devices_actual_loss.cpu().numpy().tolist()
-
         return actual_loss, metrics
-    
-    def get_loss_kwargs(loss_config: DictConfig):
-        if 'dpo' in loss_config.name:
-            loss_kwargs = {
-                    'beta': loss_config.beta,
-                    'reference_free': loss_config.get('reference_free', False),
-                    'label_smoothing': loss_config.get('label_smoothing', 0),
-                    'ipo': loss_config.name == 'ipo'
-                }
-        elif 'ipo' in loss_config.name:
-            loss_kwargs = {'beta': loss_config.beta, 'ipo': True}
-        else:
-            raise ValueError(f'unknown loss {loss_config.name}')
-        return loss_kwargs
 
     
     def compute_group_metric(self, losses, group_idx, divide_by_totalcount=False):
         # compute observed counts and mean loss for each group
         group_idx= torch.LongTensor(group_idx).cuda()
         n_groups=torch.arange(self.n_groups)
-        #print(group_idx.is_cuda)
-        #print(n_groups.is_cuda)
         group_map = (group_idx == n_groups.unsqueeze(1).long().cuda()).float()
-        #print(group_map,'map')
         group_count = group_map.sum(1)
-        #print(group_count,'count')
         if divide_by_totalcount:
             group_loss = (group_map @ losses.view(-1))/self.group_counts
         else:
             group_denom = group_count + (group_count==0).float() # avoid nans
-            #print(group_denom,'denom')
             group_loss = (group_map @ losses.view(-1))/group_denom
-        #group_loss = (group_map @ losses.view(-1))
-        ##print(group_loss,'loss')
         return group_loss, group_count
     
     def compute_group_sum_metric(self, losses, group_idx):
         # compute observed counts and mean loss for each group
         group_idx= torch.LongTensor(group_idx).cuda()
         n_groups=torch.arange(self.n_groups)
-        #print(group_idx.is_cuda)
-        #print(n_groups.is_cuda)
         group_map = (group_idx == n_groups.unsqueeze(1).long().cuda()).float()
-        #print(group_map,'map')
         group_count = group_map.sum(1)
-        #print(group_count,'count')
-        print(group_map.device,losses.view(-1).device)
         group_loss = (group_map @ losses.view(-1))
-        ##print(group_loss,'loss')
         return group_loss, group_count
     
     def compute_robust_loss(self, group_loss):
@@ -347,12 +332,9 @@ class GroupTrainer(BasicTrainer):
         if self.normalize_loss:
             adjusted_loss = adjusted_loss/(adjusted_loss.sum())
         if self.config.importance_sampling==False:
-            #print(adjusted_loss.data)
 
             self.adv_probs = self.adv_probs*torch.exp(self.config.step_size*adjusted_loss)
             self.adv_probs = self.adv_probs/(self.adv_probs.sum()).float()
-        #print(self.adv_probs,'adv_probs')
-        #print(group_loss,'group_loss')
         robust_loss = group_loss @ self.adv_probs
         return robust_loss, self.adv_probs
     
@@ -392,7 +374,6 @@ class GroupTrainer(BasicTrainer):
                 mean_eval_metrics[i]=self.evaluate(eval_grp=f'test_{i}')
                     
             if self.config.eval_train_data==True:
-                #print('start train eval')
                 mean_train_metrics={}
                 for i in range(len(self.config.datasets)):
                     mean_train_metrics[i]=self.evaluate(eval_grp=f'train_{i}')
@@ -419,11 +400,9 @@ class GroupTrainer(BasicTrainer):
                         output_dir = os.path.join(self.run_dir, f'step-{self.example_counter}')
                         rank0_print(f'creating checkpoint to write to {output_dir}...')
                         self.save(output_dir,[mean_eval_metrics])
-                #print('finish test eval')
                     
                 #evalute training data
                 if self.config.eval_train_data==True and self.example_counter % self.config.eval_train_every == 0:
-                    #print('start train eval')
                     mean_train_metrics={}
                     for i in range(len(self.config.datasets)):
                         mean_train_metrics[i]=self.evaluate(eval_grp=f'train_{i}')
@@ -482,13 +461,10 @@ class GroupTrainer(BasicTrainer):
 
             if last_log is None or time.time() - last_log > self.config.minimum_log_interval_secs:
                 #mean_train_metrics = {k: sum(v) / len(v) for k, v in batch_metrics.items()}
-                #print(batch_metrics['rewards_train/accuracies'])
                 mean_train_metrics = {}
                 gc=batch_metrics['rewards_train/group_count']
                 gc_n=np.array(gc)
-                #print(gc,gc_n,gc_n.shape)
                 gc_n=gc_n.sum(axis=0)
-                #print(gc_n)
                 for k,v in batch_metrics.items():
                     if k == 'rewards_train/group_acc':
                         v_n=np.array(v)
@@ -536,7 +512,6 @@ class GroupTrainer(BasicTrainer):
         for i in range(len(self.config.datasets)):
             mean_eval_metrics[i]=self.evaluate(eval_grp=f'test_{i}')
         if self.config.eval_train_end==True:
-            #print('start train eval')
             mean_train_metrics={}
             for i in range(len(self.config.datasets)):
                 mean_train_metrics[i]=self.evaluate(eval_grp=f'train_{i}')
@@ -545,9 +520,6 @@ class GroupTrainer(BasicTrainer):
         train_test, group_id = eval_grp.split("_")
         current_batch, train = self.get_current_batch(train_test, int(group_id))
         self.log_gpu_memory("currently allocated")
-        print(self.policy.device,'before')
-        #self.policy.eval()
-        print(self.policy.device,'after')
         mean_eval_metrics_1 = self.compute_metrics(current_batch, group_id, train)
         rank0_print(f'{eval_grp} after {self.example_counter}: {formatted_dict(mean_eval_metrics_1)}')
         
@@ -556,7 +528,7 @@ class GroupTrainer(BasicTrainer):
         self.log_gpu_memory("Max allocated so far", peak=True)
         self.log_results(mean_eval_metrics_1, eval_grp, group_id)
                     
-        print(f'finish dataset-{eval_grp}')
+        rank0_print(f'finish dataset-{eval_grp}')
         return mean_eval_metrics_1
     
     def get_current_batch(self, train_test, group_id):
@@ -586,7 +558,9 @@ class GroupTrainer(BasicTrainer):
         
         if self.config.use_ref:
             for eval_batch in tqdm.tqdm(current_batch, desc='Computing eval metrics', disable=self.rank != 0):
-                _, eval_metrics = self.get_batch_metrics(eval_batch,self.config.loss, train=train)
+                local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)
+                with torch.no_grad():
+                    _, eval_metrics = self.get_batch_metrics(local_eval_batch,self.config.loss, train=train)
                 for k, v in eval_metrics.items():
                     all_eval_metrics[k].extend(v)
 

@@ -23,8 +23,8 @@ datasets:
 # wandb configuration
 wandb:
   enabled: true
-  entity: null
-  project: "direct-preference-optimization"
+  entity: robust-rl-project
+  project: "group-robust-dpo-neurips"
   key: null
 
 # to create the local run directory and cache models/datasets,
@@ -108,6 +108,7 @@ train_frac: 0.8
 #group addition
 #robust additions
 group_handling: False
+divide_by_totalcount: True
 #ref_sample: false
 eval_train_data: False
 eval_train_full: False
@@ -118,8 +119,8 @@ eval_train_full: False
 use_ref: true
 #do_first_eval_gen: False
 #split: 100
-#eval_train_every: 160000
-#save_every: 16000
+eval_train_every: 16000
+save_every: 16000
 eval_full: False
 eval_only_once: False
 #step_size: 0.01

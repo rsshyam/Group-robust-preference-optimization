@@ -96,27 +96,28 @@ class BasicTrainer(object):
         """Generate samples from the policy (and reference model, if doing DPO training) for the given batch of inputs."""
 
         # FSDP generation according to https://github.com/pytorch/pytorch/issues/100069
-        ctx = lambda: (FSDP.summon_full_params(self.policy, writeback=False, recurse=False) if 'FSDP' in self.config.trainer else contextlib.nullcontext())
-        with ctx():
-            policy_output = self.policy.generate(
-                batch['prompt_input_ids'], attention_mask=batch['prompt_attention_mask'], max_length=self.config.max_length, do_sample=True, pad_token_id=self.tokenizer.pad_token_id)
-
-        if self.config.loss.name in {'dpo', 'ipo'}:
-            ctx = lambda: (FSDP.summon_full_params(self.reference_model, writeback=False, recurse=False) if 'FSDP' in self.config.trainer else contextlib.nullcontext())
+        with torch.no_grad():
+            ctx = lambda: (FSDP.summon_full_params(self.policy, writeback=False, recurse=False) if 'FSDP' in self.config.trainer else contextlib.nullcontext())
             with ctx():
-                reference_output = self.reference_model.generate(
+                policy_output = self.policy.generate(
                     batch['prompt_input_ids'], attention_mask=batch['prompt_attention_mask'], max_length=self.config.max_length, do_sample=True, pad_token_id=self.tokenizer.pad_token_id)
 
-        policy_output = pad_to_length(policy_output, self.config.max_length, self.tokenizer.pad_token_id)
-        policy_output = all_gather_if_needed(policy_output, self.rank, self.world_size)
-        policy_output_decoded = self.tokenizer.batch_decode(policy_output, skip_special_tokens=True)
+            if self.config.loss.name in {'dpo', 'ipo'}:
+                ctx = lambda: (FSDP.summon_full_params(self.reference_model, writeback=False, recurse=False) if 'FSDP' in self.config.trainer else contextlib.nullcontext())
+                with ctx():
+                    reference_output = self.reference_model.generate(
+                        batch['prompt_input_ids'], attention_mask=batch['prompt_attention_mask'], max_length=self.config.max_length, do_sample=True, pad_token_id=self.tokenizer.pad_token_id)
 
-        if self.config.loss.name in {'dpo', 'ipo'}:
-            reference_output = pad_to_length(reference_output, self.config.max_length, self.tokenizer.pad_token_id)
-            reference_output = all_gather_if_needed(reference_output, self.rank, self.world_size)
-            reference_output_decoded = self.tokenizer.batch_decode(reference_output, skip_special_tokens=True)
-        else:
-            reference_output_decoded = []
+            policy_output = pad_to_length(policy_output, self.config.max_length, self.tokenizer.pad_token_id)
+            policy_output = all_gather_if_needed(policy_output, self.rank, self.world_size)
+            policy_output_decoded = self.tokenizer.batch_decode(policy_output, skip_special_tokens=True)
+
+            if self.config.loss.name in {'dpo', 'ipo'}:
+                reference_output = pad_to_length(reference_output, self.config.max_length, self.tokenizer.pad_token_id)
+                reference_output = all_gather_if_needed(reference_output, self.rank, self.world_size)
+                reference_output_decoded = self.tokenizer.batch_decode(reference_output, skip_special_tokens=True)
+            else:
+                reference_output_decoded = []
 
         return policy_output_decoded, reference_output_decoded
     
@@ -128,11 +129,8 @@ class BasicTrainer(object):
            TODO: Can we get rid of this?
         """
         concatenated_batch = concatenated_inputs(batch)
-        print(model.device,'model',model(concatenated_batch['concatenated_input_ids'], attention_mask=concatenated_batch['concatenated_attention_mask']).logits.device,'beforeto')
         all_logits = model(concatenated_batch['concatenated_input_ids'], attention_mask=concatenated_batch['concatenated_attention_mask']).logits.to(torch.float32)
-        print(all_logits.device)
         all_logps = _get_batch_logps(all_logits, concatenated_batch['concatenated_labels'], average_log_prob=False)
-        print(all_logps.device)
         chosen_logps = all_logps[:batch['chosen_input_ids'].shape[0]]
         rejected_logps = all_logps[batch['chosen_input_ids'].shape[0]:]
         return chosen_logps, rejected_logps
@@ -160,14 +158,21 @@ class BasicTrainer(object):
                 policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, **loss_kwargs)
 
             reward_accuracies = (chosen_rewards > rejected_rewards).float()
+            logps_pol_accuracies= (policy_chosen_logps > policy_rejected_logps).float()
+            logps_ref_accuracies= (reference_chosen_logps > reference_rejected_logps).float()
 
             chosen_rewards = all_gather_if_needed(chosen_rewards, self.rank, self.world_size)
             rejected_rewards = all_gather_if_needed(rejected_rewards, self.rank, self.world_size)
             reward_accuracies = all_gather_if_needed(reward_accuracies, self.rank, self.world_size)
+            logps_pol_accuracies = all_gather_if_needed(logps_pol_accuracies.detach(), self.rank, self.world_size)
+            logps_ref_accuracies = all_gather_if_needed(logps_ref_accuracies.detach(), self.rank, self.world_size)
+
 
             metrics[f'rewards_{train_test}/chosen'] = chosen_rewards.cpu().numpy().tolist()
             metrics[f'rewards_{train_test}/rejected'] = rejected_rewards.cpu().numpy().tolist()
             metrics[f'rewards_{train_test}/accuracies'] = reward_accuracies.cpu().numpy().tolist()
+            metrics[f'logps_pol_{train_test}/accuracies'] = logps_pol_accuracies.cpu().numpy().tolist()
+            metrics[f'logps_ref_{train_test}/accuracies'] = logps_ref_accuracies.cpu().numpy().tolist()
             metrics[f'rewards_{train_test}/margins'] = (chosen_rewards - rejected_rewards).cpu().numpy().tolist()
 
             policy_rejected_logps = all_gather_if_needed(policy_rejected_logps.detach(), self.rank, self.world_size)
@@ -180,10 +185,8 @@ class BasicTrainer(object):
             losses = -policy_chosen_logps
         
         elif loss_config.name == 'base':
-            #print(self.policy.device,'policy')
             policy_chosen_logps, policy_rejected_logps = self.concatenated_forward(self.policy, batch)
             logps_accuracies= (policy_chosen_logps > policy_rejected_logps).float()
-            #print(logps_accuracies.device,'accu')
             losses=-logps_accuracies
 
             gathered_tensors = {
