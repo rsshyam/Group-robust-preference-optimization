@@ -142,14 +142,14 @@ class BasicTrainer(object):
         metrics = {}
         train_test = 'train' if train else 'eval'
 
-        if loss_config.name in {'dpo', 'ipo'}:
+        if loss_config.name in {'dpo', 'ipo', 'rdpo', 'ripo'}:
             policy_chosen_logps, policy_rejected_logps = self.concatenated_forward(self.policy, batch)
             with torch.no_grad():
                 reference_chosen_logps, reference_rejected_logps = self.concatenated_forward(self.reference_model, batch)
 
-            if loss_config.name == 'dpo':
+            if 'dpo' in loss_config.name:
                 loss_kwargs = {'beta': loss_config.beta, 'reference_free': loss_config.reference_free, 'label_smoothing': loss_config.label_smoothing, 'ipo': False}
-            elif loss_config.name == 'ipo':
+            elif 'ipo' in loss_config.name:
                 loss_kwargs = {'beta': loss_config.beta, 'ipo': True}
             else:
                 raise ValueError(f'unknown loss {loss_config.name}')

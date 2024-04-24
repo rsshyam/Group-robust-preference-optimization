@@ -170,7 +170,7 @@ def get_dataset(name: str, split: str, train_frac: float = 0.8, silent: bool = F
         data = get_hh(split=split, silent=silent, cache_dir=cache_dir)
     elif name == 'se':
         data = get_se(split=split, silent=silent, cache_dir=cache_dir)
-    elif 'GOqMa' in name:
+    elif 'goqma' in name:
         group_id=int(name.split('_')[-1])
         data=get_goqa(split=split,train_frac= train_frac,group_id= group_id,multi_pair=True, silent=silent, cache_dir=cache_dir)
     elif 'goqa' in name:
