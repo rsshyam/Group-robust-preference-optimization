@@ -38,31 +38,23 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
     if rank == 0 and config.wandb.enabled:
         os.environ['WANDB_CACHE_DIR'] = get_local_dir(config.local_dirs)
         wandb.login(key=config.wandb.key)
+        tags=[f"n_epochs_{config.n_epochs}",f"learning_rate_{config.lr}",f"batch_size_{config.batch_size}"]
+        if 'po' in config.loss.name:
+            tags.append(f"beta_{config.loss.beta}") 
+        dataset_group = config.datasets[0].split('_')[0]
+        #print(f'{dataset_group}_{len(config.datasets)}'+f'tr_frac{config.train_frac}'+f'{config.model.name}_spairs_{config.sep_pairs}_{config.trainer}')
+        #if config.new_grp_name:
+        group_indices="_".join(dataset.split('_')[1] for dataset in config.datasets)
         wandb.init(
+            group=f'{dataset_group}_{group_indices}'+f'tr_frac{config.train_frac}'+f'{config.model.name_or_path}_spairs_{config.sep_pairs}_{config.trainer}',
             entity=config.wandb.entity,
             project=config.wandb.project,
             config=OmegaConf.to_container(config),
             dir=get_local_dir(config.local_dirs),
             name=config.exp_name,
-        )
-        '''
-        tags=[f"num_epochs_{config.num_epochs}",f"learning_rate_{congfig.lr}",f"beta_{config.loss.beta}"]
-        if config.loss in {'dpo','ipo'}:
-            exp_name=config.model+config.datasets+.wandb_name +"_"+ + "_" + str(args.seed)
-        elif config.loss='sft':
-            exp_name=
-        
-        else:
-            exp_name=args.wandb_name +"_"+args.dpo_type + "_" + str(args.rdpo_exp_step_size) +"_" + str(args.rdpo_batch_size) + '_' + str(args.rdpo_weighted_batches) + "_" + args.rdpo_adj  + "_" + str(args.seed)
-        wandb.init(
-            group=f'state_dim{args.state_dim}'+f'action_num{args.action_num}'+f'group_num{args.group_num}'+f'pref_data_num{args.pref_data_num}'+f'weights{args.weights}'+f'feature_type{args.feature_type}'+f'eval_metric{args.eval_metric}_state-1',
-            entity=args.wandb_entity,
-            project=args.wandb_project,
-            config=args.__dict__,
-            dir=log_dir,
-            name=exp_name,
             tags=tags
-        '''
+        )
+        
 
     #TrainerClass = getattr(trainers, config.trainer)
     print(f'Creating trainer on process {rank} with world size {world_size}')
@@ -76,6 +68,15 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
 def main(config: DictConfig):
     """Main entry point for training. Validates config, creates/initializes model(s), and kicks off worker process(es)."""
 
+    if config.loss.name in {'dpo','ipo'}:
+        exp_name=f"{config.loss.name}_beta_{config.loss.beta}_seed_{config.seed}_batch_{config.batch_size}_nepoch_{config.n_epochs}_lr_{config.lr}"
+    elif config.loss.name in {'sft','base'}:
+        exp_name=f"{config.loss.name}_seed_{config.seed}_batch_{config.batch_size}_nepoch_{config.n_epochs}_lr_{config.lr}"
+    elif config.loss.name in {'rdpo','ripo'}:
+        exp_name=f"{config.loss.name}_beta_{config.loss.beta}_seed_{config.seed}_expstepsize_{config.loss.step_size}_nepoch_{config.n_epochs}_batch_{config.batch_size}_weightedbatch_{config.weighted_batches}"
+    else:
+        raise NotImplementedError
+    config.exp_name=exp_name
     # Resolve hydra references, e.g. so we don't re-compute the run directory
     OmegaConf.resolve(config)
 
