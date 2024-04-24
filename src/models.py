@@ -259,7 +259,7 @@ class ModelGenerator:
             
             models = {'base_model': base_model}
             print(base_model.device,'base-model-device')
-        elif config.loss.name in ['dpo', 'ipo']:
+        elif config.loss.name in ['dpo', 'ipo', 'rdpo', 'ripo']:
             
             #create main policy:
             policy_model = self.create_policy(config.model.name_or_path, 
