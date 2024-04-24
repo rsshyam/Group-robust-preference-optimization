@@ -1,0 +1,1 @@
+python -u train.py model=gemma-2b datasets=[goqa_0,goqa_1] train_frac=0.8 loss=sft exp_name=global_base_gemma gradient_accumulation_steps=2 batch_size=16 eval_batch_size=16 sample_during_eval=False trainer=GroupTrainer lr=1e-4 eval_every=96
