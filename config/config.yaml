@@ -88,7 +88,7 @@ warmup_steps: 150
 activation_checkpointing: false
 
 # evaluate and save model every eval_every steps
-eval_every: 20_000
+eval_every: 96
 
 # prevent wandb from logging more than once per minimum_log_interval_secs
 minimum_log_interval_secs: 1.0
@@ -108,9 +108,8 @@ train_frac: 0.8
 #group addition
 #robust additions
 group_handling: False
-divide_by_totalcount: True
 #ref_sample: false
-eval_train_data: False
+eval_train_data: True
 eval_train_full: False
 #save_dir: '/home/uceesr4/viraj_dpo/direct-preference-optimization/samples_lora'
 # how many model samples to generate during evaluation
@@ -119,17 +118,12 @@ eval_train_full: False
 use_ref: true
 #do_first_eval_gen: False
 #split: 100
-eval_train_every: 16000
+eval_train_every: 96
 save_every: 16000
 eval_full: False
 eval_only_once: False
-#step_size: 0.01
-importance_sampling: False
-imp_weights: False
+
 weighted_batches: False
-adj: 0
-#weight_decay: 0
-dpowts: False
 #n_eval_metrics: 1
 #check_all_responses: False
 eval_train_end: True
