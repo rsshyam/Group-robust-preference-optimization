@@ -1,4 +1,4 @@
-name_or_path: google/gemma-2b
+name_or_path: meta-llama/Meta-Llama-3-8B
 tokenizer_name_or_path: null
 archive: null
 block_name: null
@@ -9,7 +9,7 @@ reference_dtype: float32
 
 use_lora: True
 lora_rank: 8
-lora_alpha: 32
+lora_alpha: 16
 lora_dropout: 0.0
 lora_target_modules:
   - q_proj

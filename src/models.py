@@ -36,7 +36,7 @@ class ModelGenerator:
     
     def create_policy_from_config(self, model_config, trainer:str, local_dirs, reference:bool=False):
         
-        model_kwargs = {'device_map': 'balanced'} if trainer == 'BasicTrainer' else {}
+        model_kwargs = {'device_map': 'balanced'} if trainer in {'BasicTrainer','GroupTrainer','GroupTrainerDebug'} else {}
         
         if reference:
             dtype = model_config.policy_dtype
@@ -124,7 +124,7 @@ class ModelGenerator:
 
         """
         #Setup model and bitsandbytes conifgs:
-        model_kwargs = {'device_map': 'balanced'} if config.trainer == 'BasicTrainer' else {}
+        model_kwargs = {'device_map': 'balanced'} if config.trainer in {'BasicTrainer','GroupTrainer','GroupTrainerDebug'} else {}
         
         compute_dtype = getattr(torch, dtype)
         bnb_config = BitsAndBytesConfig(

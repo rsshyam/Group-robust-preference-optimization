@@ -1,0 +1,1 @@
+ sh scripts/run_multi_robust.sh --model gemma-2b --datasets goqa_0,goqa_1 --loss ripo --step_size 0.05 --model_archive /scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-21_20-47-58_027081/LATEST/policy.pt

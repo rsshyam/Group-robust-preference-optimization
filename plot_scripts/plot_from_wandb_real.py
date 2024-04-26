@@ -8,7 +8,7 @@ from visualisations_utils_wandb_api import (
     process_runs,
     group_process_runs
     )
-
+from collections import defaultdict
 import os
 import neatplot
 neatplot.set_style()
@@ -17,6 +17,10 @@ neatplot.set_style()
 # Constants and configurations
 ENTITY = 'robust-rl-project'
 PROJECT = 'group-robust-dpo-neurips'
+dataset_group='goqa'
+
+#group=f'{dataset_group}_{group_indices}'+f'tr_frac{config.train_frac}'+f'{config.model.name_or_path}_spairs_{config.sep_pairs}_{config.trainer}',
+            
 SETTINGS = {
     'goqa': ['goqa_0_1tr_frac0.8google/gemma-2b_spairs_False_GroupTrainer','goqa_2tr_frac0.8google/gemma-2b_spairs_False_GroupTrainer'],#goqa_2tr_frac0.8google/gemma-2b_spairs_False_GroupTrainer
     'goqma': ['goqma_2tr_frac0.8google/gemma-2b_spairs_False_GroupTrainer']
@@ -119,7 +123,8 @@ def plot_metric_with_error_bands(iteration_index, metric_values, metric_sem, lab
     plt.xlabel('Iterations',fontsize=40)
     plt.ylabel('Value',fontsize=40)
     plt.legend(fontsize=40)
-    neatplot.save_figure(f'{subfolder_path}/{file_name}')
+    safe_title = file_name.replace('/', '-')
+    neatplot.save_figure(f'{subfolder_path}/{safe_title}')
     plt.close()
 
 def plot_metric_bars_dpo(metric_config, filters_dicts, subfolder_path, all_avg_metrics_at_iterations, all_sem_metrics_at_iterations):
@@ -140,7 +145,8 @@ def plot_metric_bars_dpo(metric_config, filters_dicts, subfolder_path, all_avg_m
     plt.title(metric_config['title'],fontsize=40)
     plt.ylabel('Value',fontsize=40)
     plt.legend(fontsize=40)
-    neatplot.save_figure(f'{subfolder_path}/{metric_config["file_suffix"]}')
+    safe_title = metric_config["title"].replace('/', '-')
+    neatplot.save_figure(f'{subfolder_path}/{safe_title}')
     plt.close()
     # Define bar properties
 
@@ -213,32 +219,102 @@ def plot_metric_bars(metric_config, filters_dicts, subfolder_path, all_avg_metri
     neatplot.save_figure(f'{subfolder_path}/{metric_config["file_suffix"]}')
     plt.close()
 
+def generate_metrics(base_name, count, mode='eval', separator='_'):
+    metrics = []
+    if '/' in base_name:
+        # Split the base name on the slash
+        parts = base_name.split('/')
+        # Reconstruct the base name with the mode inserted before the slash
+        modified_base_name = f'{parts[0]}{separator}{mode}/{parts[1]}'
+    else:
+        # If no slash, proceed normally
+        modified_base_name = f'{base_name}{separator}{mode}'
+
+    # Generate metric names based on the modified base name
+    for i in range(count):
+        metrics.append(f'{modified_base_name}_{i}')
+    
+    return metrics
+    return metrics
+
 def main():
     setting = 'goqa'  # convention X_Y_Z: X={'even','uneven'}, Y={'balanced','imbalanced'}, Z={'dpo','ipo','all'}
     n_epochs=5
+    group_count=2
     groups= get_setting_details(setting)
     filters_dicts = create_filter_dicts(groups,n_epochs)
     
     #metrics_to_collect = ['grad_norm', 'train_loss', 'reward_err_1', 'reward_err_2', 'reward_param_1', 'reward_param_2', 'reward_param_3', 'reward_param_4','group_weight_1','group_weight_2','val_loss','train_group_loss_1','train_group_loss_2','val_group_loss_1','val_group_loss_2','hist_group_loss_1','hist_group_loss_2','max_val_grp_loss','max_train_grp_loss','max_reward_err','max_kl_dist']
-    metrics_to_collect = ['logps_accuracies_eval_0','logps_accuracies_eval_1','logps_pol_eval/accuracies_0','logps_pol_eval/accuracies_1','logps_ref_eval/accuracies_0','logps_ref_eval/accuracies_1','loss/train_0','loss/train_1','loss/eval_0','loss/eval_1']
+    #metrics_to_collect = ['logps_accuracies_eval_0','logps_accuracies_eval_1','logps_pol_eval/accuracies_0','logps_pol_eval/accuracies_1','logps_ref_eval/accuracies_0','logps_ref_eval/accuracies_1','loss/train_0','loss/train_1','loss/eval_0','loss/eval_1']
+    
+
+    # Define the configuration for each metric group
+    metric_configurations = [
+        {'base_name': 'logps/chosen', 'count': group_count, 'mode': 'eval', 'separator': '_'},
+        {'base_name': 'logps/rejected', 'count': group_count, 'mode': 'eval', 'separator': '_'},
+        {'base_name': 'logps/chosen', 'count': group_count, 'mode': 'train', 'separator': '_'},
+        {'base_name': 'logps/rejected', 'count': group_count, 'mode': 'train', 'separator': '_'},
+        {'base_name': 'logps_pol/accuracies', 'count': group_count, 'mode': 'train', 'separator': '_'},
+        {'base_name': 'logps_pol/accuracies', 'count': group_count, 'mode': 'eval', 'separator': '_'},
+        {'base_name': 'logps_ref/accuracies', 'count': group_count, 'mode': 'train', 'separator': '_'},
+        {'base_name': 'logps_ref/accuracies', 'count': group_count, 'mode': 'eval', 'separator': '_'},
+        {'base_name': 'rewards/chosen', 'count': group_count, 'mode': 'eval', 'separator': '_'},
+        {'base_name': 'rewards/rejected', 'count': group_count, 'mode': 'eval', 'separator': '_'},
+        {'base_name': 'rewards/chosen', 'count': group_count, 'mode': 'train', 'separator': '_'},
+        {'base_name': 'rewards/rejected', 'count': group_count, 'mode': 'train', 'separator': '_'},
+        {'base_name': 'rewards/accuracies', 'count': group_count, 'mode': 'train', 'separator': '_'},
+        {'base_name': 'rewards/accuracies', 'count': group_count, 'mode': 'eval', 'separator': '_'},
+        {'base_name': 'rewards/margins', 'count': group_count, 'mode': 'train', 'separator': '_'},
+        {'base_name': 'rewards/margins', 'count': group_count, 'mode': 'eval', 'separator': '_'},
+        {'base_name': 'loss', 'count': group_count, 'mode': 'train', 'separator': '/'},
+        {'base_name': 'loss', 'count': group_count, 'mode': 'eval', 'separator': '/'},
+        {'base_name': 'logps_accuracies', 'count': group_count, 'mode': 'eval', 'separator': '_'},
+        {'base_name': 'logps_accuracies', 'count': group_count, 'mode': 'train', 'separator': '_'},
+    ]
+
+    # Initialize an empty list to collect all generated metrics
+    metrics_list = []
+
+    # Generate metrics for each configuration and add them to the list
+    for config in metric_configurations:
+        generated_metrics = generate_metrics(
+            base_name=config['base_name'],
+            count=config['count'],
+            mode=config['mode'],
+            separator=config['separator']
+        )
+        metrics_list.extend(generated_metrics)
+
+    # Print the full list of generated metrics
+    
+    metrics_list.append('loss/train')
+    metrics_to_collect=metrics_list
+    print(metrics_to_collect)
+    
+    
+    
     all_metrics_history = {metric: [] for metric in metrics_to_collect}
 
     all_runs=[]
+    processed_filters = []
     # Loop through each filters_dict value
     for filters_dict in filters_dicts:
         # Download runs for the current filters_dict
         runs = download_runs(ENTITY, PROJECT, filters_dict)
-        all_runs.append(runs)
-        print(len(runs))
-        metrics_history = {}
+        if len(runs)>0:
+            all_runs.append(runs)
+            print(len(runs))
+            metrics_history = {}
 
-        for metric in metrics_to_collect:
-            metrics_history[metric] = process_runs(runs, field=metric, time_field='_step')
+            for metric in metrics_to_collect:
+                metrics_history[metric] = process_runs(runs, field=metric, time_field='_step')
 
-        # Accumulate metrics data for each configuration
-        for metric in metrics_to_collect:
-            all_metrics_history[metric].append(metrics_history[metric])
+            # Accumulate metrics data for each configuration
+            for metric in metrics_to_collect:
+                all_metrics_history[metric].append(metrics_history[metric])
+            processed_filters.append(filters_dict)
     #print(all_metrics_history)
+    filters_dict=processed_filters
     iteration_len=0
     iteration_index=0
     for runs in all_runs:
@@ -269,13 +345,18 @@ def main():
             all_avg_metrics_at_iterations[metric].append(avg_values.ravel())
             all_sem_metrics_at_iterations[metric].append(sem_values.ravel())
 
-    #Plotting configurations
-    plot_configs_dict = {
-        'logps_accuracies': ('logps_accuracies_eval_0', 'logps_accuracies_eval_1'),
-        'loss/train': ('loss/train_0', 'loss/train_1'),
-        'loss/eval': ('loss/eval_0', 'loss/eval_1')
-    }
+    # Create a default dictionary to hold the grouped metrics
+    plot_configs = defaultdict(list)
 
+    # Parse each metric and group by a derived key (ignoring the numeric suffix)
+    for metric in metrics_to_collect:
+        key_parts = metric.rsplit('_', 1)[0]  # Split off the numeric suffix
+        plot_configs[key_parts].append(metric)  # Append metric to its group
+
+    # Convert defaultdict to a regular dict
+    plot_configs_dict = dict(plot_configs)
+    
+    print(plot_configs_dict)
     titles_dict = {
         'logps_accuracies': 'Log Likelihood Accuracies (Chosen vs Rejected)',
         'loss/train': 'Group Train Loss',
@@ -286,27 +367,28 @@ def main():
         'logps_accuracies_eval_0' : 'Log Likelihood Accuracies Group-0',
         'logps_accuracies_eval_1' : 'Log Likelihood Accuracies Group-1'
     }
+    
 
 
     for metric, metrics in plot_configs_dict.items():
-        values, sems, labels = prepare_metric_data(filters_dicts, metrics,all_avg_metrics_at_iterations,all_sem_metrics_at_iterations,metrics_titles)
+        values, sems, labels = prepare_metric_data(filters_dicts, metrics,all_avg_metrics_at_iterations,all_sem_metrics_at_iterations,metrics)
         #metric_name = "_".join(metrics)
-        title=titles_dict[metric]
-        plot_metric_with_error_bands(iteration_index, values, sems, labels, f'{title} over Iterations', subfolder_path, f"{title}", metric, extend=True)
+        #title=titles_dict[metric]
+        plot_metric_with_error_bands(iteration_index, values, sems, labels, f'{metric} over Iterations', subfolder_path, f"{metric}", metric, extend=True)
     # Define a list of metric configurations for each plot
-    metrics_configs = [
-        {'metrics': [metric for metric in metrics_to_collect if 'logps' in metric], 'title': 'Log Likelihood Accuracies (Chosen vs Rejected)', 'file_suffix': 'log_accuracy'},
-        {'metrics': [metric for metric in metrics_to_collect if 'loss/train' in metric], 'title': 'Group Train Loss at the End', 'file_suffix': 'train_group_loss_bars'},
-        {'metrics': [metric for metric in metrics_to_collect if 'loss/eval' in metric], 'title': 'Group Validation Loss at the End', 'file_suffix': 'val_group_loss_bars'},
+    #metrics_configs = [
+    #    {'metrics': [metric for metric in metrics_to_collect if 'logps' in metric], 'title': 'Log Likelihood Accuracies (Chosen vs Rejected)', 'file_suffix': 'log_accuracy'},
+    #    {'metrics': [metric for metric in metrics_to_collect if 'loss/train' in metric], 'title': 'Group Train Loss at the End', 'file_suffix': 'train_group_loss_bars'},
+    #    {'metrics': [metric for metric in metrics_to_collect if 'loss/eval' in metric], 'title': 'Group Validation Loss at the End', 'file_suffix': 'val_group_loss_bars'},
         #{'metrics': [metric for metric in metrics_to_collect if 'max_reward_err' in metric], 'title': 'Max Reward Error at the End', 'file_suffix': 'max_reward_bars'},
         #{'metrics': [metric for metric in metrics_to_collect if 'max_train_grp_loss' in metric], 'title': 'Max Group Train Loss at the End', 'file_suffix': 'max_train_group_loss_bars'},
         #{'metrics': [metric for metric in metrics_to_collect if 'max_val_grp_loss' in metric], 'title': 'Max Group Validation Loss at the End', 'file_suffix': 'max_val_group_loss_bars'},
         #{'metrics': [metric for metric in metrics_to_collect if 'max_kl_dist' in metric], 'title': 'Max KL Distance at the End', 'file_suffix': 'max_kl_distance_bars'}
-    ]
+    #]
     #print(metrics_configs)
     # Loop through each configuration and plot
-    for config in metrics_configs:
-        plot_metric_bars_dpo(config, filters_dicts, subfolder_path,all_avg_metrics_at_iterations,all_sem_metrics_at_iterations)
+    for metric,metrics in plot_configs_dict.items():
+        plot_metric_bars_dpo({'title': metric, 'metrics':metrics}, filters_dicts, subfolder_path,all_avg_metrics_at_iterations,all_sem_metrics_at_iterations)
 
 if __name__ == "__main__":
     main()

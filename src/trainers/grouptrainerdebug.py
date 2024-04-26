@@ -226,6 +226,78 @@ class GroupTrainerDebug(BasicTrainer):
                 rank0_print(f'Loaded Test-gen data iterator {i}')
                 self.gen_batches[i] = list(self.gen_iterator[i])
 
+    def get_batch_metrics(self, batch: Dict[str, Union[List, torch.LongTensor]], loss_config: DictConfig, train=True):
+        """Compute the SFT or DPO loss and other metrics for the given batch of inputs."""
+
+        metrics = {}
+        train_test = 'train' if train else 'eval'
+
+        if loss_config.name in {'dpo', 'ipo', 'rdpo', 'ripo'}:
+            policy_chosen_logps, policy_rejected_logps = self.concatenated_forward(self.policy, batch)
+            with torch.no_grad():
+                reference_chosen_logps, reference_rejected_logps = self.concatenated_forward(self.reference_model, batch)
+            rank0_print(policy_chosen_logps,'pol-chosen')
+            rank0_print(reference_chosen_logps,'ref-chosen')
+            rank0_print(policy_rejected_logps,'pol-rejected')
+            rank0_print(reference_rejected_logps,'ref-rejected')
+            if 'dpo' in loss_config.name:
+                loss_kwargs = {'beta': loss_config.beta, 'reference_free': loss_config.reference_free, 'label_smoothing': loss_config.label_smoothing, 'ipo': False}
+            elif 'ipo' in loss_config.name:
+                loss_kwargs = {'beta': loss_config.beta, 'ipo': True}
+            else:
+                raise ValueError(f'unknown loss {loss_config.name}')
+
+            losses, chosen_rewards, rejected_rewards = preference_loss(
+                policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, **loss_kwargs)
+           
+            reward_accuracies = (chosen_rewards > rejected_rewards).float()
+            logps_pol_accuracies= (policy_chosen_logps > policy_rejected_logps).float()
+            logps_ref_accuracies= (reference_chosen_logps > reference_rejected_logps).float()
+
+            chosen_rewards = all_gather_if_needed(chosen_rewards, self.rank, self.world_size)
+            rejected_rewards = all_gather_if_needed(rejected_rewards, self.rank, self.world_size)
+            reward_accuracies = all_gather_if_needed(reward_accuracies, self.rank, self.world_size)
+            logps_pol_accuracies = all_gather_if_needed(logps_pol_accuracies.detach(), self.rank, self.world_size)
+            logps_ref_accuracies = all_gather_if_needed(logps_ref_accuracies.detach(), self.rank, self.world_size)
+
+
+            metrics[f'rewards_{train_test}/chosen'] = chosen_rewards.cpu().numpy().tolist()
+            metrics[f'rewards_{train_test}/rejected'] = rejected_rewards.cpu().numpy().tolist()
+            metrics[f'rewards_{train_test}/accuracies'] = reward_accuracies.cpu().numpy().tolist()
+            metrics[f'logps_pol_{train_test}/accuracies'] = logps_pol_accuracies.cpu().numpy().tolist()
+            metrics[f'logps_ref_{train_test}/accuracies'] = logps_ref_accuracies.cpu().numpy().tolist()
+            metrics[f'rewards_{train_test}/margins'] = (chosen_rewards - rejected_rewards).cpu().numpy().tolist()
+
+            policy_rejected_logps = all_gather_if_needed(policy_rejected_logps.detach(), self.rank, self.world_size)
+            metrics[f'logps_{train_test}/rejected'] = policy_rejected_logps.cpu().numpy().tolist()
+
+        elif loss_config.name == 'sft':
+            policy_chosen_logits = self.policy(batch['chosen_input_ids'], attention_mask=batch['chosen_attention_mask']).logits.to(torch.float32)
+            policy_chosen_logps = _get_batch_logps(policy_chosen_logits, batch['chosen_labels'], average_log_prob=False)
+
+            losses = -policy_chosen_logps
+        
+        elif loss_config.name == 'base':
+            policy_chosen_logps, policy_rejected_logps = self.concatenated_forward(self.policy, batch)
+            logps_accuracies= (policy_chosen_logps > policy_rejected_logps).float()
+            losses=-logps_accuracies
+
+            gathered_tensors = {
+                'logps_accuracies': all_gather_if_needed(logps_accuracies, self.rank, self.world_size),
+                'policy_rejected_logps': policy_rejected_logps.detach()
+            }
+            
+            metrics.update({
+                f'{k}_{train_test}': v.cpu().numpy().tolist() for k, v in gathered_tensors.items()
+            })
+
+        policy_chosen_logps = all_gather_if_needed(policy_chosen_logps.detach(), self.rank, self.world_size)
+        metrics[f'logps_{train_test}/chosen'] = policy_chosen_logps.cpu().numpy().tolist()
+
+        all_devices_losses = all_gather_if_needed(losses.detach(), self.rank, self.world_size)
+        metrics[f'loss/{train_test}'] = all_devices_losses.cpu().numpy().tolist()
+
+        return losses.mean(), metrics
     
     def get_group_batch_metrics(self, batch: Dict[str, Union[List, torch.LongTensor]], loss_config: DictConfig, train=True):
         """Compute loss and metrics for the given batch of inputs, supporting both individual and group-based metrics."""
@@ -240,8 +312,6 @@ class GroupTrainerDebug(BasicTrainer):
                 reference_chosen_logps, reference_rejected_logps = self.concatenated_forward(self.reference_model, batch)
             loss_kwargs=get_loss_kwargs(loss_config)
             losses, chosen_rewards, rejected_rewards = preference_loss(policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, **loss_kwargs)
-            rank0_print(chosen_rewards,'chosen')
-            rank0_print(rejected_rewards,'rejected')
             reward_accuracies = (chosen_rewards > rejected_rewards).float()
             #actual_loss,metrics=self.get_group_metrics(losses,chosen_rewards,rejected_rewards,reward_accuracies,loss_config,train_test, group_idx=batch['group'])
             group_idx=batch['group']
