@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Default parameters
-MODEL="gemma-7b"
-DATASETS="goqa_0,goqa_1,goqa_2,goqa_3,goqa_4"
+MODEL="phi-3-mini4kinstr"
+DATASETS="oqa_SEX_Male,oqa_SEX_Female"
 TRAIN_FRAC=0.8
 LOSS="dpo" # ipo, ripo, rdpo
 GRADIENT_ACCUMULATION_STEPS=2
@@ -11,7 +11,7 @@ EVAL_BATCH_SIZE=8
 SAMPLE_DURING_EVAL="False"
 TRAINER="GroupTrainer"
 LR=1e-4
-MODEL_ARCHIVE="/scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-25_15-52-35_455524/LATEST/policy.pt"
+MODEL_ARCHIVE="/scratch/zceeich/.cache/zceeich/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-29_18-09-35_090713/LATEST/policy.pt"
 #"/scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-21_20-47-58_027081/LATEST/policy.pt" 0,1
 # /scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-23_18-32-57_130315/LATEST/policy.pt 0,5
 # /scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-25_15-52-35_455524/LATEST/policy.pt gemma-7b 0-4
