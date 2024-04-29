@@ -13,6 +13,7 @@ import numpy as np
 from typing import Dict, List, Optional, Iterator, Callable, Union, Tuple
 import pandas as pd
 import ast
+import matplotlib.pyplot as plt
 
 COUNTRIES=[
     'Nigeria',
@@ -92,12 +93,33 @@ def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = No
         f"Unexpected keys in dataset: {list(list(data.values())[0].keys())}"
 
     return data
-def get_oqa(split: str, silent: bool=False, cache_dir: str = None) -> Dict[str, Dict[str, Union[List[Tuple[int, int]], List[str], str]]]:
+
+def get_oqa(
+        split: str, 
+        attribute: str,
+        group: str, 
+        multi_pair: bool=False, 
+        n_pairs: int=4, 
+        silent: bool=False, 
+        plot_distr: bool = False, 
+        cache_dir: str = None
+    ) -> Dict[str, Dict[str, Union[List[Tuple[int, int]], List[str], str]]]:
+    # TODO: cache_dir is unused currently
+    # TODO: better abstraction  of group to other types except SEX
+
+    OQA_ATTRIBUTES = ['SEX']
+    OQA_GROUPS = ['Male','Female']
+
+    ATTRIBUTE = attribute #OQA_ATTRIBUTES[group_id[0]]
+    GROUP = group #OQA_GROUPS[group_id[1]]
+    
     if split not in ('test', 'train'):
         raise ValueError(f'split {split} not recognized (valid: test, train)')
-    print(f'Loading GPO dataset from file...')
-    df = pd.read_csv(f'data/{split}_oqa.csv')
+    print(f'Loading GPO (OQA) dataset from file...\n')
+    df = pd.read_csv(f'data/{split}_oqa.csv')    
+    
     letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        
     def make_prompt_and_responses(elt):
         # take a row of the csv and return a prompt and responses
         question = elt['question']
@@ -109,21 +131,50 @@ def get_oqa(split: str, silent: bool=False, cache_dir: str = None) -> Dict[str, 
         numbers_str = distribution.strip('[]').split()
         numbers_float = [float(x) for x in numbers_str]
         distribution = np.array(numbers_float)
+        
         prompt = f"Answer the following question as if you were {attribute} of {group}: {question}\nRespond with a single letter:"
-        for opt, letter in zip(options, letters):
+        letters_opt = letters[:len(options)]
+        for opt, letter in zip(options, letters_opt):
             prompt += f"\n{letter}. {opt}"
-        responses = [letter for letter in letters[:len(options)]]
+        responses = [letter for letter in letters_opt]
+
         ranks = np.argsort(distribution)
-        pairs = [(ranks[i], ranks[j]) for i in range(len(ranks)) for j in range(i)]
-        sft_target = responses[ranks[-1]]
+        if multi_pair is True:
+            # pairs given as (correct, wrong) based on explicit user preference (deterministic)
+            pairs = [tuple(sorted([ranks[i], ranks[j]],reverse=True)) for i in range(len(ranks)) for j in range(i)]
+            pairs = random.sample(pairs,min(n_pairs,len(pairs)))
+        else:
+            # single pair (correct,wrong) is the best-preferred (correct) vs least-preferred (wrong)
+            correct_response_index = np.where(distribution==max(distribution))
+            wrong_response_index = np.where(distribution==min(distribution))
+            pairs = [(correct_response_index,wrong_response_index)]
+
+        sft_target = options[np.max(ranks)] # best-preferred option
         return prompt, dict(responses=responses, pairs=pairs, sft_target=sft_target)
+    
+    def plot_distribution(all_data: Dict[str, Dict]):
+        correct_idx = []
+        wrong_idx = []
+        for prompt in all_data:
+            for pair in data[prompt]['pairs']:
+                correct_idx.append(pair[0])
+                wrong_idx.append(pair[1])
+        plt.figure()
+        plt.bar(np.arange(len(correct_idx)), height=correct_idx, label='correct')
+        plt.bar(np.arange(len(wrong_idx)), height=wrong_idx, label='wrong')
+        plt.legend()
+        plt.savefig(f'./dataload_plt/oqa_distribution_{ATTRIBUTE}_{GROUP}.png')
 
     all_data = {}
     for idx, row in tqdm.tqdm(df.iterrows(), disable=silent, desc="Processing OQA"):
-        prompt, data  = make_prompt_and_responses(row)
-        all_data[prompt] = data
-    return all_data
+        if row['attribute'] == ATTRIBUTE and row['group'] == GROUP:
+            prompt, data  = make_prompt_and_responses(row)
+            all_data[prompt] = data
+    
+    if plot_distr is True:
+        plot_distribution(all_data)
 
+    return all_data
 
 def get_oqa_group(split: str, attribute: str, group: str, silent: bool=False, cache_dir: str = None) -> Dict[str, Dict[str, Union[List[Tuple[int, int]], List[str], str]]]:
     if split not in ('test', 'train'):
@@ -327,9 +378,10 @@ def get_hh_datasets(split: str, variants: list, silent: bool = False, cache_dir:
 
 
 def main():
-    data = get_oqa_group('train', 'SEX', 'Male')
+    data = get_oqa('train', 'SEX', 'Male', plot_distr=True)
     #Example of using the function to load and merge three datasets
-    data = load_and_merge_hh_datasets('train', ['helpful-rejection-sampled', 'helpful-online', 'helpful-base'])
+    
+    #data = load_and_merge_hh_datasets('train', ['helpful-rejection-sampled', 'helpful-online', 'helpful-base'])
 
     # data = get_oqa('train')
     # data = get_jeopardy_value('train', 200)

@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Iterator, Callable, Union, Tuple
 import pandas as pd
 import ast
 import matplotlib.pyplot as plt
+from typing import Literal
 
 COUNTRIES=[
     'Nigeria', 
@@ -154,7 +155,13 @@ def get_goqa(split: str, train_frac: float = 0.8, group_id: int = None, multi_pa
 #print(data_test)
 
 
-def create_goqa_data_alt(df, split, train_frac=0.8, multi_response=False, option_mode=None):
+def create_goqa_data_alt(
+        df: pd.DataFrame, 
+        split: Literal['train','test'], 
+        train_frac: float = 0.8, 
+        multi_response: bool = False, 
+        option_mode: Literal['preferred_least_min_gap','balanced'] | None = None,
+    ) -> dict[list]:
     # Sampling train and test sets
     df_train = df.sample(frac=0.8, random_state=42)
     df_test = df.drop(df_train.index)

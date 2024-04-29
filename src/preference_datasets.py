@@ -176,6 +176,11 @@ def get_dataset(name: str, split: str, train_frac: float = 0.8, silent: bool = F
     elif 'goqa' in name:
         group_id=int(name.split('_')[-1])
         data=get_goqa(split=split,train_frac=train_frac,group_id= group_id,multi_pair=False, silent=silent, cache_dir=cache_dir)
+    elif 'oqa' in name:
+        namesplit = name.split('_') # name format e.g. "oqa_SEX_Male" here
+        attribute = namesplit[1]
+        group = namesplit[2]
+        data=get_oqa(split=split,attribute=attribute,group=group,multi_pair=False,silent=silent,cache_dir=cache_dir)
     elif name in ['hel','helon','helraj','har']:
         data = get_hh_datasets(split, variant=[name], silent=silent, cache_dir=cache_dir)
     elif name == 'heltot':

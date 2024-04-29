@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Default parameters
-MODEL="gemma-7b"
-DATASETS="goqa_0,goqa_1,goqa_2,goqa_3,goqa_4"
+MODEL="phi-3-mini4kinstr"
+DATASETS="oqa_SEX_Male,oqa_SEX_Female"
 TRAIN_FRAC=0.8
 LOSS="sft"
 GRADIENT_ACCUMULATION_STEPS=2
