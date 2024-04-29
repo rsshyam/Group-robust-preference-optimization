@@ -116,7 +116,7 @@ def get_oqa(
     if split not in ('test', 'train'):
         raise ValueError(f'split {split} not recognized (valid: test, train)')
     print(f'Loading GPO (OQA) dataset from file...\n')
-    df = pd.read_csv(f'data/{split}_oqa.csv')    
+    df = pd.read_csv(f'src/data/{split}_oqa.csv')    
     
     letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         
