@@ -10,7 +10,7 @@ import tqdm
 import random
 from bs4 import BeautifulSoup, NavigableString
 import numpy as np
-from typing import Dict, List, Optional, Iterator, Callable, Union, Tuple
+from typing import Literal, Dict, List, Optional, Iterator, Callable, Union, Tuple
 import pandas as pd
 import ast
 import matplotlib.pyplot as plt
@@ -98,6 +98,7 @@ def get_oqa(
         split: str, 
         attribute: str,
         group: str, 
+        mode: Literal["best-random","best-worst"],
         multi_pair: bool=False, 
         n_pairs: int=4, 
         silent: bool=False, 
@@ -146,9 +147,19 @@ def get_oqa(
         else:
             # single pair (correct,wrong) is the best-preferred (correct) vs least-preferred (wrong)
             correct_response_index = max(ranks)
-            wrong_response_index = min(ranks)
-            pairs = [(correct_response_index,wrong_response_index)]
-
+            if mode=='best-worst':
+                wrong_response_index = min(ranks)
+                pairs = [(correct_response_index,wrong_response_index)]
+            elif mode=='best-random':
+                wrong_indices = [i for i in range(len(options)) if i != correct_response_index]
+                if len(wrong_indices)>0:
+                    wrong_response_index = random.choice(wrong_indices)
+                    pairs = [(correct_response_index,wrong_response_index)]
+                else:
+                    pairs = []
+            else:
+                raise ValueError
+            
         sft_target = options[np.max(ranks)] # best-preferred option
         return prompt, dict(responses=responses, pairs=pairs, sft_target=sft_target)
     
