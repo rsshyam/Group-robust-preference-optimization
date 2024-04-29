@@ -145,8 +145,8 @@ def get_oqa(
             pairs = random.sample(pairs,min(n_pairs,len(pairs)))
         else:
             # single pair (correct,wrong) is the best-preferred (correct) vs least-preferred (wrong)
-            correct_response_index = np.where(distribution==max(distribution))
-            wrong_response_index = np.where(distribution==min(distribution))
+            correct_response_index = max(ranks)
+            wrong_response_index = min(ranks)
             pairs = [(correct_response_index,wrong_response_index)]
 
         sft_target = options[np.max(ranks)] # best-preferred option
@@ -156,14 +156,14 @@ def get_oqa(
         correct_idx = []
         wrong_idx = []
         for prompt in all_data:
-            for pair in data[prompt]['pairs']:
+            for pair in all_data[prompt]['pairs']:
                 correct_idx.append(pair[0])
                 wrong_idx.append(pair[1])
         plt.figure()
-        plt.bar(np.arange(len(correct_idx)), height=correct_idx, label='correct')
-        plt.bar(np.arange(len(wrong_idx)), height=wrong_idx, label='wrong')
+        plt.bar(np.arange(len(correct_idx)), correct_idx, label='correct')
+        plt.bar(np.arange(len(wrong_idx)), wrong_idx, label='wrong')
         plt.legend()
-        plt.savefig(f'./dataload_plt/oqa_distribution_{ATTRIBUTE}_{GROUP}.png')
+        plt.savefig(f'./src/groupstuff/dataload_plt/oqa_distribution_{ATTRIBUTE}_{GROUP}.png')
 
     all_data = {}
     for idx, row in tqdm.tqdm(df.iterrows(), disable=silent, desc="Processing OQA"):
