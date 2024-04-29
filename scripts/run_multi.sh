@@ -4,7 +4,7 @@
 MODEL="gemma-7b"
 DATASETS="goqa_0,goqa_1,goqa_2,goqa_3,goqa_4"
 TRAIN_FRAC=0.8
-LOSS="dpo"
+LOSS="dpo" # ipo, ripo, rdpo
 GRADIENT_ACCUMULATION_STEPS=2
 BATCH_SIZE=16
 EVAL_BATCH_SIZE=8

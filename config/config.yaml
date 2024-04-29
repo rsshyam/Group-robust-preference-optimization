@@ -133,6 +133,6 @@ max_train_examples: null
 
 defaults:
 - _self_
-- model: phi-3-mini4kinstr # basic model configuration
+- model: blank_model_fp32 # basic model configuration
 - loss: sft # which loss function, either sft or dpo (specify loss.beta if using dpo)
 - data_selection: null

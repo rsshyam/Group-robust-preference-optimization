@@ -3,7 +3,7 @@
 # Default parameters
 MODEL="gemma-7b"
 DATASETS="goqa_0,goqa_1,goqa_2,goqa_3,goqa_4"
-STEP_SIZES=("0.05" "0.1" "0.15")
+STEP_SIZES=("0.05" "0.1" "0.15") # exponential group rate
 DIVIDE_BY_TOTALCOUNT="False"
 TRAIN_FRAC=0.8
 LOSS="rdpo"
