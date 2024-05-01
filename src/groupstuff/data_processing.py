@@ -110,9 +110,15 @@ def get_oqa(
 
     OQA_ATTRIBUTES = ['SEX']
     OQA_GROUPS = ['Male','Female']
+    OQA_RACE_GROUPS = ['Asian','Other','Black','White','Hispanic']
 
     ATTRIBUTE = attribute #OQA_ATTRIBUTES[group_id[0]]
     GROUP = group #OQA_GROUPS[group_id[1]]
+
+    if attribute == 'RACE' and group != 'White':
+            GROUPS == ['Asian','Black','Hispanic','Other']
+    else:
+        GROUPS = ['White']
     
     if split not in ('test', 'train'):
         raise ValueError(f'split {split} not recognized (valid: test, train)')
@@ -174,11 +180,11 @@ def get_oqa(
         plt.bar(np.arange(len(correct_idx)), correct_idx, label='correct')
         plt.bar(np.arange(len(wrong_idx)), wrong_idx, label='wrong')
         plt.legend()
-        plt.savefig(f'./src/groupstuff/dataload_plt/oqa_distribution_{ATTRIBUTE}_{GROUP}.png')
+        plt.savefig(f'./src/groupstuff/dataload_plt/oqa_distribution_{ATTRIBUTE}_{''.join(GROUPS)}.png')
 
     all_data = {}
-    for idx, row in tqdm.tqdm(df.iterrows(), disable=silent, desc="Processing OQA"):
-        if row['attribute'] == ATTRIBUTE and row['group'] == GROUP:
+    for idx, row in tqdm.tqdm(df.iterrows(), disable=silent, desc="Processing OQA"):       
+        if row['attribute'] == ATTRIBUTE and row['group'] in GROUPS:
             prompt, data  = make_prompt_and_responses(row)
             all_data[prompt] = data
     
