@@ -117,6 +117,7 @@ class GroupTrainer(BasicTrainer):
         self.train_iterator = get_batch_iterator(**data_iterator_kwargs, split=f'train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0, cache_dir=get_local_dir(config.local_dirs))
         
         self.group_counts= get_batch_iterator(**data_iterator_kwargs, split='train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0, cache_dir=get_local_dir(config.local_dirs),mode='count_groups')
+        self.total_count=sum(self.group_counts)
         rank0_print(f'Loaded train data iterator')
         if config.loss.name in {'rdpo','ripo'}:
             self.set_adjustments_impsamp()
@@ -311,7 +312,7 @@ class GroupTrainer(BasicTrainer):
         group_map = (group_idx == n_groups.unsqueeze(1).long().cuda()).float()
         group_count = group_map.sum(1)
         if divide_by_totalcount:
-            group_loss = (group_map @ losses.view(-1))/self.group_counts
+            group_loss = self.total_count*((group_map @ losses.view(-1))/self.group_counts)
         else:
             group_denom = group_count + (group_count==0).float() # avoid nans
             group_loss = (group_map @ losses.view(-1))/group_denom
