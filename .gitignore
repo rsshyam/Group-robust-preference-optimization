@@ -13,3 +13,4 @@ src/__pycache__
 
 #####################
 .png
+wandb-plots/
