@@ -2,13 +2,13 @@ import datasets
 import torch
 import ast
 import json
-from torch.utils.data import DataLoader, Dataset
-from src.utils import get_local_dir, TemporarilySeededRandom
-from torch.nn.utils.rnn import pad_sequence
+#from torch.utils.data import DataLoader, Dataset
+#from src.utils import get_local_dir, TemporarilySeededRandom
+#from torch.nn.utils.rnn import pad_sequence
 from collections import defaultdict
 import tqdm
 import random
-from bs4 import BeautifulSoup, NavigableString
+#from bs4 import BeautifulSoup, NavigableString
 import numpy as np
 from typing import Literal, Dict, List, Optional, Iterator, Callable, Union, Tuple
 import pandas as pd
@@ -98,7 +98,7 @@ def get_oqa(
         split: str, 
         attribute: str,
         group: str, 
-        mode: Literal["best-random","best-worst"],
+        mode: Literal["best-random","best-worst","random"],
         multi_pair: bool=False, 
         n_pairs: int=4, 
         silent: bool=False, 
@@ -115,17 +115,17 @@ def get_oqa(
     ATTRIBUTE = attribute #OQA_ATTRIBUTES[group_id[0]]
     GROUP = group #OQA_GROUPS[group_id[1]]
 
-    if attribute == 'RACE' and group != 'White':
-            GROUPS == ['Asian','Black','Hispanic','Other']
-    else:
-        GROUPS = ['White']
-    
     if split not in ('test', 'train'):
         raise ValueError(f'split {split} not recognized (valid: test, train)')
     print(f'Loading GPO (OQA) dataset from file...\n')
     df = pd.read_csv(f'src/data/{split}_oqa.csv')    
     
     letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+    def softmax(x):
+        e_x = np.exp(x - np.max(x))
+        return e_x / e_x.sum(axis=0)
+
         
     def make_prompt_and_responses(elt):
         # take a row of the csv and return a prompt and responses
@@ -145,16 +145,19 @@ def get_oqa(
             prompt += f"\n{letter}. {opt}"
         responses = [letter for letter in letters_opt]
 
-        ranks = np.argsort(distribution)
+        best_idx = np.argmax(distribution)
+        worst_idx = np.argmin(distribution)
+
         if multi_pair is True:
             # pairs given as (correct, wrong) based on explicit user preference (deterministic)
+            ranks = np.argsort(distribution)
             pairs = [tuple(sorted([ranks[i], ranks[j]],reverse=True)) for i in range(len(ranks)) for j in range(i)]
             pairs = random.sample(pairs,min(n_pairs,len(pairs)))
         else:
             # single pair (correct,wrong) is the best-preferred (correct) vs least-preferred (wrong)
-            correct_response_index = max(ranks)
+            correct_response_index = best_idx
             if mode=='best-worst':
-                wrong_response_index = min(ranks)
+                wrong_response_index = worst_idx
                 pairs = [(correct_response_index,wrong_response_index)]
             elif mode=='best-random':
                 wrong_indices = [i for i in range(len(options)) if i != correct_response_index]
@@ -163,10 +166,14 @@ def get_oqa(
                     pairs = [(correct_response_index,wrong_response_index)]
                 else:
                     pairs = []
+            elif mode=='random': # according to Bradley-Terry preference distribution (rewards given in OQA data)
+                distribution_softmax = softmax(distribution)
+                pair = np.random.choice(np.arange(len(distribution)), size=2, replace=False, p=distribution_softmax)
+                pairs = [tuple(pair)]
             else:
                 raise ValueError
             
-        sft_target = options[np.max(ranks)] # best-preferred option
+        sft_target = options[best_idx] # best-preferred option
         return prompt, dict(responses=responses, pairs=pairs, sft_target=sft_target)
     
     def plot_distribution(all_data: Dict[str, Dict]):
@@ -180,13 +187,15 @@ def get_oqa(
         plt.bar(np.arange(len(correct_idx)), correct_idx, label='correct')
         plt.bar(np.arange(len(wrong_idx)), wrong_idx, label='wrong')
         plt.legend()
-        plt.savefig(f'./src/groupstuff/dataload_plt/oqa_distribution_{ATTRIBUTE}_{''.join(GROUPS)}.png')
+        plt.savefig(f'./src/groupstuff/dataload_plt/oqa_distribution_{ATTRIBUTE}_{GROUP}.png')
 
     all_data = {}
-    for idx, row in tqdm.tqdm(df.iterrows(), disable=silent, desc="Processing OQA"):       
-        if row['attribute'] == ATTRIBUTE and row['group'] in GROUPS:
+    for idx, row in tqdm.tqdm(df.iterrows(), disable=silent, desc="Processing OQA"):
+        if row['attribute'] == ATTRIBUTE and row['group'] == GROUP:
             prompt, data  = make_prompt_and_responses(row)
             all_data[prompt] = data
+
+    #print('ALL DATA: ', list(all_data.items())[:10])
     
     if plot_distr is True:
         plot_distribution(all_data)
@@ -395,7 +404,7 @@ def get_hh_datasets(split: str, variants: list, silent: bool = False, cache_dir:
 
 
 def main():
-    data = get_oqa('train', 'SEX', 'Male', plot_distr=True)
+    data = get_oqa('train', 'SEX', 'Male', mode='best-random', plot_distr=False)
     #Example of using the function to load and merge three datasets
     
     #data = load_and_merge_hh_datasets('train', ['helpful-rejection-sampled', 'helpful-online', 'helpful-base'])
