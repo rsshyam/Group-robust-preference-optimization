@@ -42,6 +42,14 @@ def get_setting_details(setting_key: str):
     #pref_data_num = group_list[0].split('pref_data_num')[1].split('weights')[0]
     return group_list#, weights_array, pref_data_num
 
+def exponential_moving_average(data, alpha=0.9):
+    """Compute the exponential moving average of a data series."""
+    ema = np.zeros_like(data)
+    ema[0] = data[0]  # Start the EMA with the first element of data
+    for t in range(1, data.shape[0]):
+        ema[t] = alpha * data[t] + (1 - alpha) * ema[t - 1]
+    return ema
+
 def create_filter_dicts(groups: list[str],n_epochs: int, base: bool=False, setting: str='dpo'):
     base_filter_dpo = {
         'config.loss.name': 'dpo',
@@ -57,13 +65,15 @@ def create_filter_dicts(groups: list[str],n_epochs: int, base: bool=False, setti
         'config.loss.name': 'ipo',
         'State': 'finished',
         'config.n_epochs': n_epochs,
-        'config.loss.beta': 0.01
+        'config.loss.beta': 0.01,
+        'config.loss.label_smoothing': 0
     }
     base_filter_ripo = {
         'State': 'finished',
         'config.loss.name': 'ripo',
         'config.n_epochs': n_epochs,
-        'config.loss.beta': 0.01
+        'config.loss.beta': 0.01,
+        'config.loss.label_smoothing': 0
     }
     base_filter_sft = {
         'State': 'finished',
@@ -84,8 +94,8 @@ def create_filter_dicts(groups: list[str],n_epochs: int, base: bool=False, setti
         gemma_base_filter={**base_filter_gemma_base, 'group': groups[0]}
         return [rdpo_filter, rdpo_filter_2, dpo_filter,gemma_base_filter] if base else [rdpo_filter, dpo_filter,  rdpo_filter_2]
     elif setting=='ipo':
-        ripo_filter = {**base_filter_ripo, 'group': groups[0], 'config.loss.importance_sampling': False, 'config.loss.step_size': 0.00001 }
-        ripo_filter_2 = {**base_filter_ripo, 'group': groups[0], 'config.loss.importance_sampling': False, 'config.loss.step_size': 0.0001 }
+        ripo_filter = {**base_filter_ripo, 'group': groups[0], 'config.loss.importance_sampling': False,'config.loss.divide_by_totalcount': True, 'config.loss.step_size': 0.0000005} 
+        ripo_filter_2 = {**base_filter_ripo, 'group': groups[0], 'config.loss.importance_sampling': False, 'config.loss.divide_by_totalcount': False, 'config.loss.step_size': 0.00001 }
         ipo_filter = {**base_filter_ipo, 'group': groups[0]}
         sft_filter = {**base_filter_sft, 'group': groups[0]}
         gemma_base_filter={**base_filter_gemma_base, 'group': groups[0]}
@@ -139,7 +149,7 @@ def prepare_metric_data(filters_dicts, metrics,all_avg_metrics_at_iterations,all
             labels.append(algo)
     return metric_values, metric_sem, labels
 
-def plot_metric_with_error_bands(iteration_index, metric_values, metric_sem, labels, plot_title, subfolder_path, file_name,metric, colors=None, eval_every=192):
+def plot_metric_with_error_bands(iteration_index, metric_values, metric_sem, labels, plot_title, subfolder_path, file_name,metric, colors=None, eval_every=192, running_avg_window=None):
     plt.figure(figsize=(12, 6))
     #for i, (avg, sem) in enumerate(zip(metric_values, metric_sem)):
     min_value = float('inf')
@@ -300,13 +310,14 @@ def generate_metrics(base_name, count, mode='eval', separator='_'):
     return metrics
 
 def main():
-    setting = 'goqa_5'  # convention X_Y_Z: X={'even','uneven'}, Y={'balanced','imbalanced'}, Z={'dpo','ipo','all'}
+    setting = 'goqa'  # convention X_Y_Z: X={'even','uneven'}, Y={'balanced','imbalanced'}, Z={'dpo','ipo','all'}
     n_epochs=10
-    group_count=5
+    group_count=2
     groups= get_setting_details(setting)
     algo_setting='ipo'
     eval_every=192
     filters_dicts = create_filter_dicts(groups,n_epochs,setting=algo_setting)
+    smoothing_alpha = 0.3
     
     #metrics_to_collect = ['grad_norm', 'train_loss', 'reward_err_1', 'reward_err_2', 'reward_param_1', 'reward_param_2', 'reward_param_3', 'reward_param_4','group_weight_1','group_weight_2','val_loss','train_group_loss_1','train_group_loss_2','val_group_loss_1','val_group_loss_2','hist_group_loss_1','hist_group_loss_2','max_val_grp_loss','max_train_grp_loss','max_reward_err','max_kl_dist']
     #metrics_to_collect = ['logps_accuracies_eval_0','logps_accuracies_eval_1','logps_pol_eval/accuracies_0','logps_pol_eval/accuracies_1','logps_ref_eval/accuracies_0','logps_ref_eval/accuracies_1','loss/train_0','loss/train_1','loss/eval_0','loss/eval_1']
@@ -399,10 +410,19 @@ def main():
 
     for i, filters_dict in enumerate(filters_dicts):
         for metric in metrics_to_collect:
-            print(all_metrics_history[metric])
+            #print(all_metrics_history[metric])
             values_matrix = all_metrics_history[metric][i]
             #print('VAL MATRIX: ', values_matrix[0:2])
-            #print(values_matrix)
+
+            values_matrix = np.array(values_matrix)
+            #print(values_matrix.shape)
+
+            # Apply EMA to each time series; assuming shape (6, 133, 1)
+            for j in range(values_matrix.shape[0]):  # Loop over each series
+                for k in range(values_matrix.shape[2]):  # Loop over each feature or variable if more than one
+                    values_matrix[j, :, k] = exponential_moving_average(values_matrix[j, :, k].flatten(), alpha=smoothing_alpha)
+
+
             avg_values = np.mean(values_matrix, axis=0)
             sem_values = sem(all_metrics_history[metric][i], axis=0)
             all_avg_metrics_at_iterations[metric].append(avg_values.ravel())

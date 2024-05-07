@@ -193,6 +193,7 @@ class GroupTrainer(BasicTrainer):
                     self.traineval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
                     rank0_print(f'Loaded Train-eval data iterator {i}')
                     self.traineval_batches[i] = list(self.traineval_iterator[i])
+                    #wandb.log({'train_eval_batches': len(self.traineval_batches[i])})
 
                     ###for sampling
                     self.traingen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
@@ -221,6 +222,7 @@ class GroupTrainer(BasicTrainer):
                 self.eval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='test', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
                 self.eval_batches[i] = list(self.eval_iterator[i])
                 rank0_print(f'Loaded {len(self.eval_batches[i])} eval batches of size {self.config.eval_batch_size} from 1')
+                #wandb.log({'eval_batches': len(self.eval_batches[i])})
 
                 ###for sampling
                 self.gen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='test_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
@@ -339,6 +341,39 @@ class GroupTrainer(BasicTrainer):
             self.adv_probs = self.adv_probs/(self.adv_probs.sum()).float()
         robust_loss = group_loss @ self.adv_probs
         return robust_loss, self.adv_probs
+    def aggregate_worst_case_metrics(self,mean_eval_metrics:Dict[str,Union[float,List[float]]]):
+        """Aggregate the worst case metrics from multiple datasets."""
+        
+        # Initialize a dictionary to store the worst case results
+        worst_case_metrics = {}
+        
+        # Iterate over each metric in the first dataset as a base
+        for metric_name in mean_eval_metrics[0].keys():
+            # Extract the base name of the metric to group similar metrics (assuming metric_name ends with '_{integer}')
+            base_metric_name = '_'.join(metric_name.split('_')[:-1])
+            
+            # Initialize a variable to store the worst case value
+            worst_case_value = None
+            
+            # Determine if the metric is a loss or an accuracy type
+            is_loss_metric = 'loss' in metric_name.lower()
+            
+            # Iterate over all datasets to find the worst case
+            for eval_metrics in mean_eval_metrics:
+                metric_value = eval_metrics[metric_name]
+                
+                # Update the worst case value based on the metric type
+                if worst_case_value is None:
+                    worst_case_value = metric_value
+                elif is_loss_metric and metric_value > worst_case_value:
+                    worst_case_value = metric_value
+                elif not is_loss_metric and metric_value < worst_case_value:
+                    worst_case_value = metric_value
+            
+            # Store the worst case result in the dictionary
+            worst_case_metrics[f'worst_case_{base_metric_name}'] = worst_case_value
+        
+        return worst_case_metrics
     
     def train(self):
         """Begin either SFT or DPO training, with periodic evaluation."""
@@ -394,6 +429,9 @@ class GroupTrainer(BasicTrainer):
                 mean_eval_metrics={}
                 for i in range(len(self.config.datasets)):
                     mean_eval_metrics[i]=self.evaluate(eval_grp=f'test_{i}')
+
+                worst_case_eval_metrics=self.aggregate_worst_case_metrics(mean_eval_metrics)
+                self.log_worst_case_results(worst_case_eval_metrics, 'test')
                     
                 if self.example_counter > 0 and self.example_counter % self.config.save_every == 0 :
                     if self.config.debug:
@@ -408,6 +446,8 @@ class GroupTrainer(BasicTrainer):
                     mean_train_metrics={}
                     for i in range(len(self.config.datasets)):
                         mean_train_metrics[i]=self.evaluate(eval_grp=f'train_{i}')
+                    worst_case_train_metrics=self.aggregate_worst_case_metrics(mean_eval_metrics)
+                    self.log_worst_case_results(worst_case_train_metrics, 'train')
                     #mean_eval_metrics_0=self.evaluate(eval_grp='train_0')
                     #mean_eval_metrics_1=self.batch_evaluate(eval_grp='train_1')
             #### END EVALUATION ####
@@ -663,3 +703,30 @@ class GroupTrainer(BasicTrainer):
             writer.writerow(row)
     
         print(f"Logged results for {eval_grp} with metrics: {mean_eval_metrics}")
+
+
+
+    def log_worst_case_results(self, worst_case_metrics, eval_grp):
+        """Logs worst-case evaluation results to different sinks such as Weights & Biases and local CSV files."""
+        # Log to Weights & Biases if enabled and if the current process is rank 0 (to avoid duplicate logs in multi-GPU setups)
+        if self.config.wandb.enabled and self.rank == 0:
+            wandb.log(worst_case_metrics, step=self.example_counter)
+
+        # Define CSV file path for worst-case metrics
+        results_csv_path = os.path.join(self.run_dir, f"{self.config.datasets[0]}_worst_case_results.csv")
+
+        # Check if the file exists to decide whether to write headers
+        file_exists = os.path.exists(results_csv_path)
+
+        # Write results to the CSV file
+        with open(results_csv_path, mode='a' if file_exists else 'w', newline='') as file:
+            writer = csv.writer(file)
+            if not file_exists:  # Write headers if the file does not exist
+                headers = ["Experiment Name"] + list(worst_case_metrics.keys())
+                writer.writerow(headers)
+
+            # Prepare the row to be written
+            row = [self.config.exp_name] + list(worst_case_metrics.values())
+            writer.writerow(row)
+
+        print(f"Logged worst-case results for {eval_grp} with metrics: {worst_case_metrics}")
