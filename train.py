@@ -2,7 +2,7 @@ import torch
 torch.backends.cuda.matmul.allow_tf32 = True
 import torch.nn as nn
 import transformers
-from src.utils import get_local_dir, get_local_run_dir, disable_dropout, init_distributed, get_open_port
+from src.utils import get_local_dir, get_local_run_dir, get_local_run_dir_group, disable_dropout, init_distributed, get_open_port
 import os
 import hydra
 import torch.multiprocessing as mp
@@ -22,7 +22,7 @@ if os.name != 'nt':
     import resource
 
 
-OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dirs: get_local_run_dir(exp_name, local_dirs))
+OmegaConf.register_new_resolver("get_local_run_dir_group", lambda exp_name, group_name, local_dirs: get_local_run_dir_group(exp_name, group_name, local_dirs))
 
 
 def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Module,
@@ -41,12 +41,8 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
         tags=[f"n_epochs_{config.n_epochs}",f"learning_rate_{config.lr}",f"batch_size_{config.batch_size}"]
         if 'po' in config.loss.name:
             tags.append(f"beta_{config.loss.beta}") 
-        dataset_group = config.datasets[0].split('_')[0]
-        #print(f'{dataset_group}_{len(config.datasets)}'+f'tr_frac{config.train_frac}'+f'{config.model.name}_spairs_{config.sep_pairs}_{config.trainer}')
-        #if config.new_grp_name:
-        group_indices="_".join(dataset.split('_')[1] for dataset in config.datasets)
         wandb.init(
-            group=f'{dataset_group}_{group_indices}'+f'tr_frac{config.train_frac}'+f'{config.model.name_or_path}_spairs_{config.sep_pairs}_{config.trainer}',
+            group=config.group_name,
             entity=config.wandb.entity,
             project=config.wandb.project,
             config=OmegaConf.to_container(config),
@@ -78,6 +74,13 @@ def main(config: DictConfig):
         raise NotImplementedError
     config.exp_name=exp_name
     # Resolve hydra references, e.g. so we don't re-compute the run directory
+    dataset_group = config.datasets[0].split('_')[0]
+    #print(f'{dataset_group}_{len(config.datasets)}'+f'tr_frac{config.train_frac}'+f'{config.model.name}_spairs_{config.sep_pairs}_{config.trainer}')
+    #if config.new_grp_name:
+    group_indices="_".join(dataset.split('_')[1] for dataset in config.datasets)
+    group=f'{dataset_group}_{group_indices}'+f'tr_frac{config.train_frac}'+f'{config.model.name_or_path}_spairs_{config.sep_pairs}_{config.trainer}'
+    config.group_name=group
+    print(group)
     OmegaConf.resolve(config)
 
     missing_keys: Set[str] = OmegaConf.missing_keys(config)

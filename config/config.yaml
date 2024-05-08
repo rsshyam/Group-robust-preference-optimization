@@ -4,6 +4,8 @@ seed: 0
 # name for this experiment in the local run directory and on wandb
 exp_name: ???
 
+group_name: ???
+
 # the batch size for training; for FSDP, the batch size per GPU is batch_size / (grad_accumulation_steps * num_gpus)
 batch_size: 4
 
@@ -47,7 +49,7 @@ n_eval_model_samples: 16
 do_first_eval: true
 
 # an OmegaConf resolver that returns the local run directory, calling a function in utils.py
-local_run_dir: ${get_local_run_dir:${exp_name},${local_dirs}}
+local_run_dir: ${get_local_run_dir_group:${exp_name},${group_name},${local_dirs}}
 
 # the learning rate
 lr: 5e-7

@@ -60,6 +60,14 @@ def get_local_run_dir(exp_name: str, local_dirs: List[str]) -> str:
     os.makedirs(run_dir, exist_ok=True)
     return run_dir
 
+def get_local_run_dir_group(exp_name: str, group_name: str, local_dirs: List[str]) -> str:
+    """Create a local directory to store outputs for this run, and return its path."""
+    now = datetime.now()
+    timestamp = now.strftime("%Y-%m-%d_%H-%M-%S_%f")
+    run_dir = f"{get_local_dir(local_dirs)}/{group_name}/{exp_name}_{timestamp}"
+    os.makedirs(run_dir, exist_ok=True)
+    return run_dir
+
 
 def slice_and_move_batch_for_device(batch: Dict, rank: int, world_size: int, device: str) -> Dict:
     """Slice a batch into chunks, and move each chunk to the specified device."""

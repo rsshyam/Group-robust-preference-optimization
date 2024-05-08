@@ -359,9 +359,10 @@ class GroupTrainer(BasicTrainer):
             is_loss_metric = 'loss' in metric_name.lower()
             
             # Iterate over all datasets to find the worst case
-            for eval_metrics in mean_eval_metrics:
-                metric_value = eval_metrics[metric_name]
-                
+            for group_idx,eval_metrics in enumerate(mean_eval_metrics.values()):
+                #print(f"{base_metric_name}_{group_idx}")
+                metric_value = eval_metrics[f"{base_metric_name}_{group_idx}"]
+                #print(metric_value)
                 # Update the worst case value based on the metric type
                 if worst_case_value is None:
                     worst_case_value = metric_value

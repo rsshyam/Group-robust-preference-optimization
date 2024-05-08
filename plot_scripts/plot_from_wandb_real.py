@@ -94,12 +94,12 @@ def create_filter_dicts(groups: list[str],n_epochs: int, base: bool=False, setti
         gemma_base_filter={**base_filter_gemma_base, 'group': groups[0]}
         return [rdpo_filter, rdpo_filter_2, dpo_filter,gemma_base_filter] if base else [rdpo_filter, dpo_filter,  rdpo_filter_2]
     elif setting=='ipo':
-        ripo_filter = {**base_filter_ripo, 'group': groups[0], 'config.loss.importance_sampling': False,'config.loss.divide_by_totalcount': True, 'config.loss.step_size': 0.0000005} 
-        ripo_filter_2 = {**base_filter_ripo, 'group': groups[0], 'config.loss.importance_sampling': False, 'config.loss.divide_by_totalcount': False, 'config.loss.step_size': 0.00001 }
+        ripo_filter = {**base_filter_ripo, 'group': groups[0], 'config.loss.importance_sampling': False,'config.loss.divide_by_totalcount': True, 'config.loss.step_size': 0.000001} 
+        ripo_filter_2 = {**base_filter_ripo, 'group': groups[0], 'config.loss.importance_sampling': False, 'config.loss.divide_by_totalcount': False, 'config.loss.step_size': 0.000005 }
         ipo_filter = {**base_filter_ipo, 'group': groups[0]}
         sft_filter = {**base_filter_sft, 'group': groups[0]}
         gemma_base_filter={**base_filter_gemma_base, 'group': groups[0]}
-        return [ripo_filter, ripo_filter_2, ipo_filter,gemma_base_filter] if base else [ripo_filter, ipo_filter,  ripo_filter_2]
+        return [ripo_filter, ripo_filter_2, ipo_filter,gemma_base_filter] if base else [ripo_filter, ipo_filter]
 
     filters = []
     for group in groups:
@@ -222,6 +222,36 @@ def plot_metric_bars_dpo(metric_config, filters_dicts, subfolder_path, all_avg_m
     plt.close()
     # Define bar properties
 
+def plot_metric_bars_dpo_opt_iter(metric_config, filters_dicts, subfolder_path, all_avg_metrics_at_iterations, all_sem_metrics_at_iterations,optimal_iteration_indices):
+    plt.figure(figsize=(12, 6))
+
+    for i, filters_dict in enumerate(filters_dicts):
+        algo = determine_algorithm(filters_dict)
+        optimal_iteration_index=optimal_iteration_indices[i]
+        print(optimal_iteration_index)
+        metrics_end_avg = [all_avg_metrics_at_iterations[metric][i][optimal_iteration_index] for metric in metric_config['metrics']]
+        metrics_end_sem = [all_sem_metrics_at_iterations[metric][i][optimal_iteration_index] for metric in metric_config['metrics']]
+        
+        bar_width = 0.1 if 'group_loss' in metric_config['metrics'][0] else 0.2
+        offset = i * bar_width
+        positions = np.arange(len(metrics_end_avg)) + offset
+        
+        plt.bar(positions, height=metrics_end_avg, yerr=metrics_end_sem, width=bar_width, capsize=5, alpha=0.7, label=f'{algo}')
+        plt.xticks(positions, [f"Group {i+1}" for i in range(len(metrics_end_avg))],fontsize=40)
+
+    plt.title(metric_config['title'],fontsize=40)
+    plt.ylabel('Value',fontsize=40)
+    plt.legend(fontsize=40)
+    safe_title = metric_config["title"].replace('/', '-')
+    if 'accuracies' in safe_title:
+        plt.ylim(0.5, 1)  # Set y-axis limits starting from 0.5
+    if 'loss_eval' in safe_title:
+        plt.ylim(bottom=1000) #set y-axis lower limit to 1000
+        
+    neatplot.save_figure(f'{subfolder_path}/{safe_title}_bars')
+    plt.close()
+    # Define bar properties
+
 def plot_metric_bars(metric_config, filters_dicts, subfolder_path, all_avg_metrics_at_iterations, all_sem_metrics_at_iterations):
     plt.figure(figsize=(12, 6))
     print(metric_config)
@@ -317,7 +347,7 @@ def main():
     algo_setting='ipo'
     eval_every=192
     filters_dicts = create_filter_dicts(groups,n_epochs,setting=algo_setting)
-    smoothing_alpha = 0.3
+    smoothing_alpha = 1
     
     #metrics_to_collect = ['grad_norm', 'train_loss', 'reward_err_1', 'reward_err_2', 'reward_param_1', 'reward_param_2', 'reward_param_3', 'reward_param_4','group_weight_1','group_weight_2','val_loss','train_group_loss_1','train_group_loss_2','val_group_loss_1','val_group_loss_2','hist_group_loss_1','hist_group_loss_2','max_val_grp_loss','max_train_grp_loss','max_reward_err','max_kl_dist']
     #metrics_to_collect = ['logps_accuracies_eval_0','logps_accuracies_eval_1','logps_pol_eval/accuracies_0','logps_pol_eval/accuracies_1','logps_ref_eval/accuracies_0','logps_ref_eval/accuracies_1','loss/train_0','loss/train_1','loss/eval_0','loss/eval_1']
@@ -401,14 +431,22 @@ def main():
     
     base_folder = f'wandb-plots-gemma/{len(filters_dicts)}_setting_{setting}_{algo_setting}'
     os.makedirs(base_folder, exist_ok=True)
-    subfolder_name = f"{filters_dicts[0]['config.loss.name']}{len(filters_dicts)}"
+    subfolder_name = f"{filters_dicts[0]['config.loss.name']}{len(filters_dicts)}_{smoothing_alpha}_opt"
     subfolder_path = os.path.join(base_folder, subfolder_name)
     os.makedirs(subfolder_path, exist_ok=True)
 
     all_avg_metrics_at_iterations = {metric: [] for metric in metrics_to_collect}
     all_sem_metrics_at_iterations = {metric: [] for metric in metrics_to_collect}
-
+    optimal_iteration_indices=[]
     for i, filters_dict in enumerate(filters_dicts):
+        values_loss_matrix = all_metrics_history['rewards_eval/accuracies_1'][i]
+        values_loss_matrix = np.array(values_loss_matrix)
+        avg_values = np.mean(values_loss_matrix, axis=0)
+        sem_values = sem(values_loss_matrix, axis=0)
+        print(avg_values.shape,avg_values)
+        optimal_iteration_index=np.argmax(avg_values.squeeze())
+        print(optimal_iteration_index)
+        optimal_iteration_indices.append(optimal_iteration_index)
         for metric in metrics_to_collect:
             #print(all_metrics_history[metric])
             values_matrix = all_metrics_history[metric][i]
@@ -424,10 +462,10 @@ def main():
 
 
             avg_values = np.mean(values_matrix, axis=0)
-            sem_values = sem(all_metrics_history[metric][i], axis=0)
+            sem_values = sem(values_matrix, axis=0)
             all_avg_metrics_at_iterations[metric].append(avg_values.ravel())
             all_sem_metrics_at_iterations[metric].append(sem_values.ravel())
-
+    print(optimal_iteration_indices)
     # Create a default dictionary to hold the grouped metrics
     plot_configs = defaultdict(list)
 
@@ -471,7 +509,7 @@ def main():
     #print(metrics_configs)
     # Loop through each configuration and plot
     for metric,metrics in plot_configs_dict.items():
-        plot_metric_bars_dpo({'title': metric, 'metrics':metrics}, filters_dicts, subfolder_path,all_avg_metrics_at_iterations,all_sem_metrics_at_iterations)
+        plot_metric_bars_dpo_opt_iter({'title': metric, 'metrics':metrics}, filters_dicts, subfolder_path,all_avg_metrics_at_iterations,all_sem_metrics_at_iterations,optimal_iteration_indices)
 
 if __name__ == "__main__":
     main()

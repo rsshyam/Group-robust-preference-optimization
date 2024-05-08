@@ -113,10 +113,18 @@ class GroupTrainerDebug(BasicTrainer):
 
         self.policy = policy
         self.reference_model = reference_model
+        self.group_counts= get_batch_iterator(**data_iterator_kwargs, split='train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0, cache_dir=get_local_dir(config.local_dirs),mode='count_groups')
+        self.total_count=sum(self.group_counts)
+        if self.total_count>2000:
+            rank0_print('creating validation set for early stopping')
+            self.early_stopping=True
+        else:
+            rank0_print('dataset too small for validation set of early stopping')
+            self.early_stopping=False
 
         self.train_iterator = get_batch_iterator(**data_iterator_kwargs, split=f'train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0, cache_dir=get_local_dir(config.local_dirs))
         
-        self.group_counts= get_batch_iterator(**data_iterator_kwargs, split='train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0, cache_dir=get_local_dir(config.local_dirs),mode='count_groups')
+        
         rank0_print(f'Loaded train data iterator')
         if config.loss.name in {'rdpo','ripo'}:
             self.set_adjustments_impsamp()
@@ -192,6 +200,7 @@ class GroupTrainerDebug(BasicTrainer):
                     self.traineval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
                     rank0_print(f'Loaded Train-eval data iterator {i}')
                     self.traineval_batches[i] = list(self.traineval_iterator[i])
+                    #wandb.log({'train_eval_batches': len(self.traineval_batches[i])})
 
                     ###for sampling
                     self.traingen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
@@ -220,84 +229,13 @@ class GroupTrainerDebug(BasicTrainer):
                 self.eval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='test', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
                 self.eval_batches[i] = list(self.eval_iterator[i])
                 rank0_print(f'Loaded {len(self.eval_batches[i])} eval batches of size {self.config.eval_batch_size} from 1')
+                #wandb.log({'eval_batches': len(self.eval_batches[i])})
 
                 ###for sampling
                 self.gen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='test_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
                 rank0_print(f'Loaded Test-gen data iterator {i}')
                 self.gen_batches[i] = list(self.gen_iterator[i])
 
-    def get_batch_metrics(self, batch: Dict[str, Union[List, torch.LongTensor]], loss_config: DictConfig, train=True):
-        """Compute the SFT or DPO loss and other metrics for the given batch of inputs."""
-
-        metrics = {}
-        train_test = 'train' if train else 'eval'
-
-        if loss_config.name in {'dpo', 'ipo', 'rdpo', 'ripo'}:
-            policy_chosen_logps, policy_rejected_logps = self.concatenated_forward(self.policy, batch)
-            with torch.no_grad():
-                reference_chosen_logps, reference_rejected_logps = self.concatenated_forward(self.reference_model, batch)
-            rank0_print(policy_chosen_logps,'pol-chosen')
-            rank0_print(reference_chosen_logps,'ref-chosen')
-            rank0_print(policy_rejected_logps,'pol-rejected')
-            rank0_print(reference_rejected_logps,'ref-rejected')
-            if 'dpo' in loss_config.name:
-                loss_kwargs = {'beta': loss_config.beta, 'reference_free': loss_config.reference_free, 'label_smoothing': loss_config.label_smoothing, 'ipo': False}
-            elif 'ipo' in loss_config.name:
-                loss_kwargs = {'beta': loss_config.beta, 'ipo': True}
-            else:
-                raise ValueError(f'unknown loss {loss_config.name}')
-
-            losses, chosen_rewards, rejected_rewards = preference_loss(
-                policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, **loss_kwargs)
-           
-            reward_accuracies = (chosen_rewards > rejected_rewards).float()
-            logps_pol_accuracies= (policy_chosen_logps > policy_rejected_logps).float()
-            logps_ref_accuracies= (reference_chosen_logps > reference_rejected_logps).float()
-
-            chosen_rewards = all_gather_if_needed(chosen_rewards, self.rank, self.world_size)
-            rejected_rewards = all_gather_if_needed(rejected_rewards, self.rank, self.world_size)
-            reward_accuracies = all_gather_if_needed(reward_accuracies, self.rank, self.world_size)
-            logps_pol_accuracies = all_gather_if_needed(logps_pol_accuracies.detach(), self.rank, self.world_size)
-            logps_ref_accuracies = all_gather_if_needed(logps_ref_accuracies.detach(), self.rank, self.world_size)
-
-
-            metrics[f'rewards_{train_test}/chosen'] = chosen_rewards.cpu().numpy().tolist()
-            metrics[f'rewards_{train_test}/rejected'] = rejected_rewards.cpu().numpy().tolist()
-            metrics[f'rewards_{train_test}/accuracies'] = reward_accuracies.cpu().numpy().tolist()
-            metrics[f'logps_pol_{train_test}/accuracies'] = logps_pol_accuracies.cpu().numpy().tolist()
-            metrics[f'logps_ref_{train_test}/accuracies'] = logps_ref_accuracies.cpu().numpy().tolist()
-            metrics[f'rewards_{train_test}/margins'] = (chosen_rewards - rejected_rewards).cpu().numpy().tolist()
-
-            policy_rejected_logps = all_gather_if_needed(policy_rejected_logps.detach(), self.rank, self.world_size)
-            metrics[f'logps_{train_test}/rejected'] = policy_rejected_logps.cpu().numpy().tolist()
-
-        elif loss_config.name == 'sft':
-            policy_chosen_logits = self.policy(batch['chosen_input_ids'], attention_mask=batch['chosen_attention_mask']).logits.to(torch.float32)
-            policy_chosen_logps = _get_batch_logps(policy_chosen_logits, batch['chosen_labels'], average_log_prob=False)
-
-            losses = -policy_chosen_logps
-        
-        elif loss_config.name == 'base':
-            policy_chosen_logps, policy_rejected_logps = self.concatenated_forward(self.policy, batch)
-            logps_accuracies= (policy_chosen_logps > policy_rejected_logps).float()
-            losses=-logps_accuracies
-
-            gathered_tensors = {
-                'logps_accuracies': all_gather_if_needed(logps_accuracies, self.rank, self.world_size),
-                'policy_rejected_logps': policy_rejected_logps.detach()
-            }
-            
-            metrics.update({
-                f'{k}_{train_test}': v.cpu().numpy().tolist() for k, v in gathered_tensors.items()
-            })
-
-        policy_chosen_logps = all_gather_if_needed(policy_chosen_logps.detach(), self.rank, self.world_size)
-        metrics[f'logps_{train_test}/chosen'] = policy_chosen_logps.cpu().numpy().tolist()
-
-        all_devices_losses = all_gather_if_needed(losses.detach(), self.rank, self.world_size)
-        metrics[f'loss/{train_test}'] = all_devices_losses.cpu().numpy().tolist()
-
-        return losses.mean(), metrics
     
     def get_group_batch_metrics(self, batch: Dict[str, Union[List, torch.LongTensor]], loss_config: DictConfig, train=True):
         """Compute loss and metrics for the given batch of inputs, supporting both individual and group-based metrics."""
@@ -383,7 +321,7 @@ class GroupTrainerDebug(BasicTrainer):
         group_map = (group_idx == n_groups.unsqueeze(1).long().cuda()).float()
         group_count = group_map.sum(1)
         if divide_by_totalcount:
-            group_loss = (group_map @ losses.view(-1))/self.group_counts
+            group_loss = self.total_count*((group_map @ losses.view(-1))/self.group_counts)
         else:
             group_denom = group_count + (group_count==0).float() # avoid nans
             group_loss = (group_map @ losses.view(-1))/group_denom
@@ -410,6 +348,41 @@ class GroupTrainerDebug(BasicTrainer):
             self.adv_probs = self.adv_probs/(self.adv_probs.sum()).float()
         robust_loss = group_loss @ self.adv_probs
         return robust_loss, self.adv_probs
+    def aggregate_worst_case_metrics(self,mean_eval_metrics:Dict[str,Union[float,List[float]]]):
+        """Aggregate the worst case metrics from multiple datasets."""
+        
+        # Initialize a dictionary to store the worst case results
+        worst_case_metrics = {}
+        
+        # Iterate over each metric in the first dataset as a base
+        for metric_name in mean_eval_metrics[0].keys():
+            # Extract the base name of the metric to group similar metrics (assuming metric_name ends with '_{integer}')
+            base_metric_name = '_'.join(metric_name.split('_')[:-1])
+            
+            # Initialize a variable to store the worst case value
+            worst_case_value = None
+            
+            # Determine if the metric is a loss or an accuracy type
+            is_loss_metric = 'loss' in metric_name.lower()
+            
+            # Iterate over all datasets to find the worst case
+            #print(mean_eval_metrics)
+            for group_idx,eval_metrics in enumerate(mean_eval_metrics.values()):
+                #print(f"{base_metric_name}_{group_idx}")
+                metric_value = eval_metrics[f"{base_metric_name}_{group_idx}"]
+                #print(metric_value)
+                # Update the worst case value based on the metric type
+                if worst_case_value is None:
+                    worst_case_value = metric_value
+                elif is_loss_metric and metric_value > worst_case_value:
+                    worst_case_value = metric_value
+                elif not is_loss_metric and metric_value < worst_case_value:
+                    worst_case_value = metric_value
+            #raise ValueError
+            # Store the worst case result in the dictionary
+            worst_case_metrics[f'worst_case_{base_metric_name}'] = worst_case_value
+        
+        return worst_case_metrics
     
     def train(self):
         """Begin either SFT or DPO training, with periodic evaluation."""
@@ -465,6 +438,9 @@ class GroupTrainerDebug(BasicTrainer):
                 mean_eval_metrics={}
                 for i in range(len(self.config.datasets)):
                     mean_eval_metrics[i]=self.evaluate(eval_grp=f'test_{i}')
+
+                worst_case_eval_metrics=self.aggregate_worst_case_metrics(mean_eval_metrics)
+                self.log_worst_case_results(worst_case_eval_metrics, 'test')
                     
                 if self.example_counter > 0 and self.example_counter % self.config.save_every == 0 :
                     if self.config.debug:
@@ -479,6 +455,8 @@ class GroupTrainerDebug(BasicTrainer):
                     mean_train_metrics={}
                     for i in range(len(self.config.datasets)):
                         mean_train_metrics[i]=self.evaluate(eval_grp=f'train_{i}')
+                    worst_case_train_metrics=self.aggregate_worst_case_metrics(mean_eval_metrics)
+                    self.log_worst_case_results(worst_case_train_metrics, 'train')
                     #mean_eval_metrics_0=self.evaluate(eval_grp='train_0')
                     #mean_eval_metrics_1=self.batch_evaluate(eval_grp='train_1')
             #### END EVALUATION ####
@@ -734,3 +712,30 @@ class GroupTrainerDebug(BasicTrainer):
             writer.writerow(row)
     
         print(f"Logged results for {eval_grp} with metrics: {mean_eval_metrics}")
+
+
+
+    def log_worst_case_results(self, worst_case_metrics, eval_grp):
+        """Logs worst-case evaluation results to different sinks such as Weights & Biases and local CSV files."""
+        # Log to Weights & Biases if enabled and if the current process is rank 0 (to avoid duplicate logs in multi-GPU setups)
+        if self.config.wandb.enabled and self.rank == 0:
+            wandb.log(worst_case_metrics, step=self.example_counter)
+
+        # Define CSV file path for worst-case metrics
+        results_csv_path = os.path.join(self.run_dir, f"{self.config.datasets[0]}_worst_case_results.csv")
+
+        # Check if the file exists to decide whether to write headers
+        file_exists = os.path.exists(results_csv_path)
+
+        # Write results to the CSV file
+        with open(results_csv_path, mode='a' if file_exists else 'w', newline='') as file:
+            writer = csv.writer(file)
+            if not file_exists:  # Write headers if the file does not exist
+                headers = ["Experiment Name"] + list(worst_case_metrics.keys())
+                writer.writerow(headers)
+
+            # Prepare the row to be written
+            row = [self.config.exp_name] + list(worst_case_metrics.values())
+            writer.writerow(row)
+
+        print(f"Logged worst-case results for {eval_grp} with metrics: {worst_case_metrics}")
