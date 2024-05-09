@@ -50,7 +50,6 @@ import functools
 from typing import Optional, Dict, List, Union, Tuple
 
 
-
 from src.trainers.basictrainer import BasicTrainer
 
 
@@ -69,7 +68,7 @@ def get_loss_kwargs(loss_config: DictConfig):
         raise ValueError(f'unknown loss {loss_config.name}')
     return loss_kwargs
 
-class GroupTrainerDebug(BasicTrainer):
+class GroupTrainerEarlyStop(BasicTrainer):
     def __init__(self, policy: nn.Module, config: DictConfig, seed: int, run_dir: str, reference_model: Optional[nn.Module] = None, data_selector: DataSelector = None, rank: int = 0, world_size: int = 1):
         """A trainer for a language model, supporting either SFT or DPO training.
            
@@ -115,7 +114,7 @@ class GroupTrainerDebug(BasicTrainer):
         self.reference_model = reference_model
         self.group_counts= get_batch_iterator(**data_iterator_kwargs, split='train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0, cache_dir=get_local_dir(config.local_dirs),mode='count_groups')
         self.total_count=sum(self.group_counts)
-        if self.total_count>2000:
+        if self.total_count>2000 and config.loss.name != 'sft':
             rank0_print('creating validation set for early stopping')
             self.early_stopping=True
         else:
@@ -129,7 +128,10 @@ class GroupTrainerDebug(BasicTrainer):
         if config.loss.name in {'rdpo','ripo'}:
             self.set_adjustments_impsamp()
         #both functions need to be implemented
-        self.prepare_eval_vald_iterator()
+        if not self.early_stopping:
+            self.prepare_eval_vald_iterator()
+        else:
+            self.prepare_eval_vald_iterator_earlystop()
 
         self.data_selector = data_selector
 
@@ -235,6 +237,113 @@ class GroupTrainerDebug(BasicTrainer):
                 self.gen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='test_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
                 rank0_print(f'Loaded Test-gen data iterator {i}')
                 self.gen_batches[i] = list(self.gen_iterator[i])
+
+
+    def prepare_eval_vald_iterator_earlystop(self):
+        data_iterator_kwargs_eval={}
+        for i in range(len(self.config.datasets)):
+            rank0_print(self.config.datasets[i:i+1])
+            data_iterator_kwargs_eval[i]=dict(
+            names=self.config.datasets[i:i+1],
+            tokenizer=self.tokenizer,
+            shuffle=True,
+            max_length=self.config.max_length,
+            max_prompt_length=self.config.max_prompt_length,
+            sft_mode=self.config.loss.name == 'sft',
+            weighted=self.config.weighted_batches,
+            sep_pairs=self.config.sep_pairs,
+            group_handling=True,
+            test_dataset=self.config.test_dataset
+            )#separates datasets}
+        self.traineval_iterator={}
+        self.traineval_batches={}
+        self.traingen_iterator={}
+        self.traingen_batches={}
+        if self.config.eval_train_data == True or self.config.eval_train_end==True: #add or
+            if self.config.eval_train_full == True:#evaluate part of train data at the end to compare
+                for i in range(len(data_iterator_kwargs_eval)):
+                    ##for metrics
+                    self.traineval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                    rank0_print(f'Loaded Train-eval data iterator {i}')
+                    self.traineval_batches[i] = list(self.traineval_iterator[i])
+
+                    ###for sampling
+                    self.traingen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train_gen', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                    rank0_print(f'Loaded Train-gen data iterator {i}')
+                    self.traingen_batches[i] = list(self.traingen_iterator[i])
+                
+            else:
+                for i in range(len(data_iterator_kwargs_eval)):
+                    ##for metrics
+                    self.traineval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                    rank0_print(f'Loaded Train-eval data iterator {i}')
+                    self.traineval_batches[i] = list(self.traineval_iterator[i])
+                    #wandb.log({'train_eval_batches': len(self.traineval_batches[i])})
+
+                    ###for sampling
+                    self.traingen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                    rank0_print(f'Loaded Train-gen data iterator {i}')
+                    self.traingen_batches[i] = list(self.traingen_iterator[i])
+
+        self.eval_iterator={}
+        self.eval_batches={}
+        self.gen_iterator={}
+        self.gen_batches={}
+        if self.config.eval_full==True:
+            for i in range(len(data_iterator_kwargs_eval)):
+                ###for metrics
+                self.eval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='truetest', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.eval_batches[i] = list(self.eval_iterator[i])
+                rank0_print(f'Loaded {len(self.eval_batches[i])} eval batches of size {self.config.eval_batch_size} from {i}')
+
+                ###for sampling
+                self.gen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='truetest_gen', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                rank0_print(f'Loaded Test-gen data iterator {i}')
+                self.gen_batches[i] = list(self.gen_iterator[i])
+
+        else:
+            for i in range(len(data_iterator_kwargs_eval)):
+                ####for metrics
+                self.eval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='truetest', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.eval_batches[i] = list(self.eval_iterator[i])
+                rank0_print(f'Loaded {len(self.eval_batches[i])} eval batches of size {self.config.eval_batch_size} from {i}')
+                #wandb.log({'eval_batches': len(self.eval_batches[i])})
+
+                ###for sampling
+                self.gen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='truetest_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                rank0_print(f'Loaded Test-gen data iterator {i}')
+                self.gen_batches[i] = list(self.gen_iterator[i])
+
+        self.vald_iterator={}
+        self.vald_batches={}
+        self.valdgen_iterator={}
+        self.valdgen_batches={}
+        if self.config.eval_full==True:
+            for i in range(len(data_iterator_kwargs_eval)):
+                ###for metrics
+                self.vald_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='valtest', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.vald_batches[i] = list(self.vald_iterator[i])
+                rank0_print(f'Loaded {len(self.vald_batches[i])} validation batches of size {self.config.eval_batch_size} from {i}')
+
+                ###for sampling
+                self.valdgen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='valtest_gen', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                rank0_print(f'Loaded validation-gen data iterator {i}')
+                self.valdgen_batches[i] = list(self.valdgen_iterator[i])
+
+        else:
+            for i in range(len(data_iterator_kwargs_eval)):
+                ####for metrics
+                self.vald_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='valtest', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.vald_batches[i] = list(self.vald_iterator[i])
+                rank0_print(f'Loaded {len(self.eval_batches[i])} validation batches of size {self.config.eval_batch_size} from {i}')
+                #wandb.log({'eval_batches': len(self.eval_batches[i])})
+
+                ###for sampling
+                self.valdgen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='valtest_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                rank0_print(f'Loaded Test-gen data iterator {i}')
+                self.valdgen_batches[i] = list(self.valdgen_iterator[i])
+
+
 
     
     def get_group_batch_metrics(self, batch: Dict[str, Union[List, torch.LongTensor]], loss_config: DictConfig, train=True):
@@ -388,7 +497,8 @@ class GroupTrainerDebug(BasicTrainer):
         """Begin either SFT or DPO training, with periodic evaluation."""
         rank0_print(f'Using {self.config.optimizer} optimizer')
         self.optimizer = getattr(torch.optim, self.config.optimizer)(self.policy.parameters(), lr=self.config.lr)
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda step: min(1.0, (step + 1) / (self.config.warmup_steps + 1)))
+        #self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda step: min(1.0, (step + 1) / (self.config.warmup_steps + 1)))
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=1, threshold=1, threshold_mode='rel', cooldown=0, min_lr=0, eps=0, verbose=True)
 
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
@@ -459,6 +569,24 @@ class GroupTrainerDebug(BasicTrainer):
                     self.log_worst_case_results(worst_case_train_metrics, 'train')
                     #mean_eval_metrics_0=self.evaluate(eval_grp='train_0')
                     #mean_eval_metrics_1=self.batch_evaluate(eval_grp='train_1')
+                
+                if self.early_stopping:
+                    mean_vald_metrics={}
+                    for i in range(len(self.config.datasets)):
+                        mean_vald_metrics[i]=self.evaluate(eval_grp=f'vald_{i}')
+                    worst_case_vald_metrics=self.aggregate_worst_case_metrics(mean_vald_metrics)
+                    self.log_worst_case_results(worst_case_vald_metrics, 'vald')
+                    worst_case_vald_loss=worst_case_vald_metrics['worst_case_loss/vald']
+                    self.scheduler.step(worst_case_vald_loss)
+
+                    # Check if any learning rate has fallen below the threshold
+                    current_lr = min([group['lr'] for group in self.optimizer.param_groups])
+                    rank0_print(current_lr, 'current learning rate')
+                    if current_lr < self.config.min_lr:
+                        print(f"Stopping training as learning rate {current_lr} is below the threshold {self.config.min_lr}")
+                        break
+                    #mean_eval_metrics_0=self.evaluate(eval_grp='train_0')
+                    #mean_eval_metrics_1=self.batch_evaluate(eval_grp='train_1')
             #### END EVALUATION ####
             
             #### POINT SELECTION ####            
@@ -499,7 +627,7 @@ class GroupTrainerDebug(BasicTrainer):
 
                 grad_norm = self.clip_gradient()
                 self.optimizer.step()
-                self.scheduler.step()
+                #self.scheduler.step()
                 self.optimizer.zero_grad()
 
             step_time = time.time() - start_time
@@ -562,22 +690,36 @@ class GroupTrainerDebug(BasicTrainer):
             if self.config.max_train_examples is not None and self.example_counter > self.config.max_train_examples:
                 break
             #### END TRAINING ####
+
+
+
+
         # evaluate one last time after training
         #self.evaluate()
         self.policy.eval()
         mean_eval_metrics={}
         for i in range(len(self.config.datasets)):
             mean_eval_metrics[i]=self.evaluate(eval_grp=f'test_{i}')
+
+         
+        worst_case_eval_metrics=self.aggregate_worst_case_metrics(mean_eval_metrics)
+        self.log_worst_case_results(worst_case_eval_metrics, 'test')
+
         if self.config.eval_train_end==True:
             mean_train_metrics={}
             for i in range(len(self.config.datasets)):
                 mean_train_metrics[i]=self.evaluate(eval_grp=f'train_{i}')
-
+            
+            worst_case_train_metrics=self.aggregate_worst_case_metrics(mean_eval_metrics)
+            self.log_worst_case_results(worst_case_train_metrics, 'train')
+   
     def evaluate(self,eval_grp:str):
         train_test, group_id = eval_grp.split("_")
         current_batch, train = self.get_current_batch(train_test, int(group_id))
         self.log_gpu_memory("currently allocated")
         mean_eval_metrics_1 = self.compute_metrics(current_batch, group_id, train)
+        if train_test == 'vald':
+            mean_eval_metrics_1 = {k.replace('eval', 'vald'): v for k, v in mean_eval_metrics_1.items()}
         rank0_print(f'{eval_grp} after {self.example_counter}: {formatted_dict(mean_eval_metrics_1)}')
         
         current_sample_batch, train = self.get_current_sample_batch(train_test, int(group_id))
@@ -593,6 +735,8 @@ class GroupTrainerDebug(BasicTrainer):
             return self.eval_batches[group_id], False
         elif train_test == 'train':
             return self.traineval_batches[group_id], True
+        elif train_test == 'vald':
+            return self.vald_batches[group_id], False
         else:
             raise NotImplementedError
     def get_current_sample_batch(self, train_test, group_id):
@@ -600,6 +744,8 @@ class GroupTrainerDebug(BasicTrainer):
             return self.gen_batches[group_id], False
         elif train_test == 'train':
             return self.traingen_batches[group_id], True
+        elif train_test == 'vald':
+            return self.valdgen_batches[group_id], False
         else:
             raise NotImplementedError
         

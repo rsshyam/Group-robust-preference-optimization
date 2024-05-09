@@ -560,10 +560,16 @@ class GroupTrainer(BasicTrainer):
         mean_eval_metrics={}
         for i in range(len(self.config.datasets)):
             mean_eval_metrics[i]=self.evaluate(eval_grp=f'test_{i}')
+        
+        worst_case_eval_metrics=self.aggregate_worst_case_metrics(mean_eval_metrics)
+        self.log_worst_case_results(worst_case_eval_metrics, 'test')
+
         if self.config.eval_train_end==True:
             mean_train_metrics={}
             for i in range(len(self.config.datasets)):
                 mean_train_metrics[i]=self.evaluate(eval_grp=f'train_{i}')
+            worst_case_train_metrics=self.aggregate_worst_case_metrics(mean_eval_metrics)
+            self.log_worst_case_results(worst_case_train_metrics, 'train')
 
     def evaluate(self,eval_grp:str):
         train_test, group_id = eval_grp.split("_")

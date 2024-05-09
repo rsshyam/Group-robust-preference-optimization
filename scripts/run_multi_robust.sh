@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Default parameters
-MODEL="phi-3-mini4kinstr"
-DATASETS="oqa_SEX_Male,oqa_SEX_Female"
-STEP_SIZES=("0.05" "0.1" "0.15") # exponential group rate
+MODEL="gemma-2b"
+DATASETS="goqa_0,goqa_1"
+STEP_SIZES=("0.000005") # exponential group rate
 DIVIDE_BY_TOTALCOUNT="False"
 TRAIN_FRAC=0.8
-LOSS="rdpo"
+LOSS="ripo"
 GRADIENT_ACCUMULATION_STEPS=2
 BATCH_SIZE=16
 EVAL_BATCH_SIZE=8
@@ -14,11 +14,12 @@ SAMPLE_DURING_EVAL="False"
 TRAINER="GroupTrainer"
 LR=1e-4
 LABEL_SMOOTHING=0
-MODEL_ARCHIVE="/scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-25_15-52-35_455524/LATEST/policy.pt"
+MODEL_ARCHIVE="/scratch/uceesr4/.cache/uceesr4/goqa_0_1tr_frac0.8google/gemma-2b_spairs_False_GroupTrainer/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-05-08_17-36-46_083107/LATEST/policy.pt"
 #"/scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-21_20-47-58_027081/LATEST/policy.pt" 0,1
 # /scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-23_18-32-57_130315/LATEST/policy.pt 0,5
 # /scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-25_15-52-35_455524/LATEST/policy.pt gemma-7b 0-4
-LOSS_BETA=0.1
+# /scratch/uceesr4/.cache/uceesr4/goqa_0_1tr_frac0.8google/gemma-2b_spairs_False_GroupTrainer/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-05-08_17-36-46_083107/LATEST/policy.pt gemma-2b correct sft
+LOSS_BETA=0.01
 N_EPOCHS=10
 EVAL_EVERY=192
 EVAL_TRAIN_EVERY=192

@@ -85,6 +85,9 @@ def plot_questions_by_country(df, title_suffix=""):
 def create_goqa_data(df,split,train_frac=0.8, multi_pair=False,n_pairs=4):
     df_train=df.sample(frac=0.8,random_state=42)
     df_test=df.drop(df_train.index)
+
+    df_truetest=df_test.sample(frac=0.5,random_state=42)
+    df_valtest=df_test.drop(df_truetest.index)
     if split=='train':
         if train_frac < 0.8:
             df=df_train.sample(frac=(train_frac/0.8),random_state=42)
@@ -92,6 +95,10 @@ def create_goqa_data(df,split,train_frac=0.8, multi_pair=False,n_pairs=4):
             df=df_train
     elif split=='test':
         df=df_test
+    elif split=='truetest':
+        df=df_truetest
+    elif split=='valtest':
+        df=df_valtest
     else:
         print(split)
         raise Exception('incorrect split')
@@ -120,7 +127,7 @@ def create_goqa_data(df,split,train_frac=0.8, multi_pair=False,n_pairs=4):
             ranks=torch.argsort(prob_y)
             pairs = [(ranks[i], ranks[j]) for i in range(len(ranks)) for j in range(i)]
             correct_response_index = ranks[-1]
-            correct_response = options[ranks[-1]]
+            correct_response = responses[ranks[-1]]
 
             data[prompt]['sft_target'] = correct_response
             data[prompt]['responses'] = responses
@@ -131,6 +138,7 @@ def create_goqa_data(df,split,train_frac=0.8, multi_pair=False,n_pairs=4):
                 if wrong_indices:
                     wrong_response_index = random.choice(wrong_indices)
                     data[prompt]['pairs']=[(correct_response_index,wrong_response_index)]
+            #print(data[prompt])
     #print(len(data))
     return data
 
