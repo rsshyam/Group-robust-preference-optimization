@@ -498,7 +498,7 @@ class GroupTrainerEarlyStop(BasicTrainer):
         rank0_print(f'Using {self.config.optimizer} optimizer')
         self.optimizer = getattr(torch.optim, self.config.optimizer)(self.policy.parameters(), lr=self.config.lr)
         #self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda step: min(1.0, (step + 1) / (self.config.warmup_steps + 1)))
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=1, threshold=1, threshold_mode='rel', cooldown=0, min_lr=0, eps=0, verbose=True)
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='max', factor=0.1, patience=10, threshold=0.001, threshold_mode='rel', cooldown=0, min_lr=0, eps=0, verbose=True)
 
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
@@ -576,8 +576,8 @@ class GroupTrainerEarlyStop(BasicTrainer):
                         mean_vald_metrics[i]=self.evaluate(eval_grp=f'vald_{i}')
                     worst_case_vald_metrics=self.aggregate_worst_case_metrics(mean_vald_metrics)
                     self.log_worst_case_results(worst_case_vald_metrics, 'vald')
-                    worst_case_vald_loss=worst_case_vald_metrics['worst_case_loss/vald']
-                    self.scheduler.step(worst_case_vald_loss)
+                    worst_case_vald_accuracies=worst_case_vald_metrics['worst_case_rewards_vald/accuracies']
+                    self.scheduler.step(worst_case_vald_accuracies)
 
                     # Check if any learning rate has fallen below the threshold
                     current_lr = min([group['lr'] for group in self.optimizer.param_groups])

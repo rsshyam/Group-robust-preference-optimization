@@ -18,6 +18,7 @@ MODEL_ARCHIVE="/scratch/uceesr4/.cache/uceesr4/goqa_0_1tr_frac0.8google/gemma-2b
 #"/scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-21_20-47-58_027081/LATEST/policy.pt" 0,1
 # /scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-23_18-32-57_130315/LATEST/policy.pt 0,5
 # /scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-25_15-52-35_455524/LATEST/policy.pt gemma-7b 0-4
+# /scratch/uceesr4/.cache/uceesr4/goqa_0_1_2_3_4tr_frac0.8google/gemma-7b_spairs_False_GroupTrainer/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-05-08_17-42-05_815286/LATEST/policy.pt gemma-7b correct sft
 # /scratch/uceesr4/.cache/uceesr4/goqa_0_1tr_frac0.8google/gemma-2b_spairs_False_GroupTrainer/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-05-08_17-36-46_083107/LATEST/policy.pt gemma-2b correct sft
 LOSS_BETA=0.01
 N_EPOCHS=10

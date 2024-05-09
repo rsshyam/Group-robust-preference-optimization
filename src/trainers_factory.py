@@ -2,7 +2,7 @@
 from src.trainers.basictrainer import BasicTrainer
 from src.trainers.grouptrainer import GroupTrainer
 from src.trainers.paralleltrainer import FSDPTrainer,TensorParallelTrainer
-from trainers.grouptrainerearlystop import GroupTrainerEarlyStop
+from src.trainers.grouptrainerearlystop import GroupTrainerEarlyStop
 
 def get_trainer(trainer,policy, config, seed, local_run_dir, reference_model, data_selector, rank, world_size):
     if trainer == "BasicTrainer":
