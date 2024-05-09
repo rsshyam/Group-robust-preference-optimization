@@ -498,7 +498,8 @@ class GroupTrainerEarlyStop(BasicTrainer):
         rank0_print(f'Using {self.config.optimizer} optimizer')
         self.optimizer = getattr(torch.optim, self.config.optimizer)(self.policy.parameters(), lr=self.config.lr)
         #self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda step: min(1.0, (step + 1) / (self.config.warmup_steps + 1)))
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='max', factor=0.1, patience=10, threshold=0.001, threshold_mode='rel', cooldown=0, min_lr=0, eps=0, verbose=True)
+        patience=10*(192/self.config.eval_every)
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='max', factor=0.1, patience=patience, threshold=0.001, threshold_mode='rel', cooldown=0, min_lr=0, eps=0, verbose=True)
 
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
