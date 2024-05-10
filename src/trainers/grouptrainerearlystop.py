@@ -500,6 +500,10 @@ class GroupTrainerEarlyStop(BasicTrainer):
         #self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda step: min(1.0, (step + 1) / (self.config.warmup_steps + 1)))
         patience=10*(192/self.config.eval_every)*self.config.patience_factor
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='max', factor=0.1, patience=patience, threshold=0.001, threshold_mode='rel', cooldown=0, min_lr=0, eps=0, verbose=True)
+        
+        if self.config.loss.name in {'rdpo', 'ripo'} and getattr(self.config.loss, 'adaptive_step_size', False):
+            self.initial_lr = min([param_group['lr'] for param_group in self.optimizer.param_groups])
+            self.initial_step_size = self.config.loss.step_size  # Save initial step_size
 
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
@@ -590,6 +594,17 @@ class GroupTrainerEarlyStop(BasicTrainer):
                     # Check if any learning rate has fallen below the threshold
                     current_lr = min([group['lr'] for group in self.optimizer.param_groups])
                     rank0_print(current_lr, 'current learning rate')
+
+                    if self.config.loss.name in {'rdpo', 'ripo'} and getattr(self.config.loss, 'adaptive_step_size', False):
+                        lr_change_factor = current_lr / self.initial_lr
+                        # Apply the same change factor to step_size if the learning rate has changed
+                        #if lr_change_factor != 1:
+                        new_step_size = self.initial_step_size * lr_change_factor
+                        self.config.loss.step_size = new_step_size
+                        print(f"Updated step_size to {new_step_size} due to LR change.")
+                        # Update initial values to reflect current settings
+                        self.initial_lr = current_lr
+                        self.initial_step_size = new_step_size
                     if current_lr < self.config.min_lr*(1.001):
                         print(f"Stopping training as learning rate {current_lr} is below the threshold {self.config.min_lr}")
                         break

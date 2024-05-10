@@ -25,3 +25,5 @@ adj: 0
 dpowts: False
 
 divide_by_totalcount: True
+
+adaptive_step_size: False
