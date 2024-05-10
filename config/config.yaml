@@ -28,7 +28,8 @@ wandb:
   entity: robust-rl-project
   project: "group-robust-dpo-neurips"
   key: null
-
+scheduler_metric: "accuracy"
+patience_factor: 1 
 # to create the local run directory and cache models/datasets,
 #   we will try each of these directories in order; if none exist,
 #   we will create the last one and use it

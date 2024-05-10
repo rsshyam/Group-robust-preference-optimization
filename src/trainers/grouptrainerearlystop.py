@@ -498,7 +498,7 @@ class GroupTrainerEarlyStop(BasicTrainer):
         rank0_print(f'Using {self.config.optimizer} optimizer')
         self.optimizer = getattr(torch.optim, self.config.optimizer)(self.policy.parameters(), lr=self.config.lr)
         #self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda step: min(1.0, (step + 1) / (self.config.warmup_steps + 1)))
-        patience=10*(192/self.config.eval_every)
+        patience=10*(192/self.config.eval_every)*self.config.patience_factor
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='max', factor=0.1, patience=patience, threshold=0.001, threshold_mode='rel', cooldown=0, min_lr=0, eps=0, verbose=True)
 
         torch.manual_seed(self.seed)
@@ -543,7 +543,7 @@ class GroupTrainerEarlyStop(BasicTrainer):
             torch.cuda.empty_cache()
             print(f'currently allocated: {cur_gpu_mem / 1e9:.2f} GB')
             #### BEGIN EVALUATION ####
-            if self.example_counter % self.config.eval_every == 0 and (self.example_counter > 0 or self.config.do_first_eval):
+            if self.example_counter % self.config.eval_every == 0 and (self.example_counter > 0):
                 rank0_print(f'Running evaluation after {self.example_counter} train examples')
                 self.policy.eval()
                 mean_eval_metrics={}
@@ -566,7 +566,7 @@ class GroupTrainerEarlyStop(BasicTrainer):
                     mean_train_metrics={}
                     for i in range(len(self.config.datasets)):
                         mean_train_metrics[i]=self.evaluate(eval_grp=f'train_{i}')
-                    worst_case_train_metrics=self.aggregate_worst_case_metrics(mean_eval_metrics)
+                    worst_case_train_metrics=self.aggregate_worst_case_metrics(mean_train_metrics)
                     self.log_worst_case_results(worst_case_train_metrics, 'train')
                     #mean_eval_metrics_0=self.evaluate(eval_grp='train_0')
                     #mean_eval_metrics_1=self.batch_evaluate(eval_grp='train_1')
@@ -577,13 +577,20 @@ class GroupTrainerEarlyStop(BasicTrainer):
                         mean_vald_metrics[i]=self.evaluate(eval_grp=f'vald_{i}')
                     worst_case_vald_metrics=self.aggregate_worst_case_metrics(mean_vald_metrics)
                     self.log_worst_case_results(worst_case_vald_metrics, 'vald')
-                    worst_case_vald_accuracies=worst_case_vald_metrics['worst_case_rewards_vald/accuracies']
-                    self.scheduler.step(worst_case_vald_accuracies)
+
+                    if self.config.scheduler_metric=='accuracy':
+                        worst_case_vald_accuracies=worst_case_vald_metrics['worst_case_rewards_vald/accuracies']
+                        self.scheduler.step(worst_case_vald_accuracies)
+                    elif self.config.scheduler_metric=='loss':
+                        worst_case_vald_losses=worst_case_vald_metrics['worst_case_loss/vald']
+                        self.scheduler.step(-worst_case_vald_losses)
+                    else:
+                        raise ValueError(f"Unknown scheduler metric {self.config.scheduler_metric}")
 
                     # Check if any learning rate has fallen below the threshold
                     current_lr = min([group['lr'] for group in self.optimizer.param_groups])
                     rank0_print(current_lr, 'current learning rate')
-                    if current_lr < self.config.min_lr:
+                    if current_lr < self.config.min_lr*(1.001):
                         print(f"Stopping training as learning rate {current_lr} is below the threshold {self.config.min_lr}")
                         break
                     #mean_eval_metrics_0=self.evaluate(eval_grp='train_0')
@@ -711,7 +718,7 @@ class GroupTrainerEarlyStop(BasicTrainer):
             for i in range(len(self.config.datasets)):
                 mean_train_metrics[i]=self.evaluate(eval_grp=f'train_{i}')
             
-            worst_case_train_metrics=self.aggregate_worst_case_metrics(mean_eval_metrics)
+            worst_case_train_metrics=self.aggregate_worst_case_metrics(mean_train_metrics)
             self.log_worst_case_results(worst_case_train_metrics, 'train')
    
     def evaluate(self,eval_grp:str):
