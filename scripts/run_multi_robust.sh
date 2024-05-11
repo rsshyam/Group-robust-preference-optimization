@@ -163,7 +163,7 @@ do
   for SEED in $(seq 0 $NSEEDS)
   do
     echo "Running training with seed $SEED"
-    python -u train.py model=$MODEL datasets=[$DATASETS] loss.step_size=$STEP_SIZE patience_factor=$PATIENCE_FACTOR scheduler_metric=$SCHEDULER_METRIC adaptive_step_size=$ADAPTIVE_STEP_SIZE loss.divide_by_totalcount=$DIVIDE_BY_TOTALCOUNT train_frac=$TRAIN_FRAC loss=$LOSS loss.label_smoothing=$LABEL_SMOOTHING gradient_accumulation_steps=$GRADIENT_ACCUMULATION_STEPS batch_size=$BATCH_SIZE eval_batch_size=$EVAL_BATCH_SIZE sample_during_eval=$SAMPLE_DURING_EVAL trainer=$TRAINER lr=$LR model.archive=$MODEL_ARCHIVE loss.beta=$LOSS_BETA seed=$SEED n_epochs=$N_EPOCHS eval_every=$EVAL_EVERY eval_train_every=$EVAL_TRAIN_EVERY eval_only_once=$EVAL_ONLY_ONCE
+    python -u train.py model=$MODEL datasets=[$DATASETS] loss.step_size=$STEP_SIZE patience_factor=$PATIENCE_FACTOR scheduler_metric=$SCHEDULER_METRIC loss.adaptive_step_size=$ADAPTIVE_STEP_SIZE loss.divide_by_totalcount=$DIVIDE_BY_TOTALCOUNT train_frac=$TRAIN_FRAC loss=$LOSS loss.label_smoothing=$LABEL_SMOOTHING gradient_accumulation_steps=$GRADIENT_ACCUMULATION_STEPS batch_size=$BATCH_SIZE eval_batch_size=$EVAL_BATCH_SIZE sample_during_eval=$SAMPLE_DURING_EVAL trainer=$TRAINER lr=$LR model.archive=$MODEL_ARCHIVE loss.beta=$LOSS_BETA seed=$SEED n_epochs=$N_EPOCHS eval_every=$EVAL_EVERY eval_train_every=$EVAL_TRAIN_EVERY eval_only_once=$EVAL_ONLY_ONCE
   done
 done
 

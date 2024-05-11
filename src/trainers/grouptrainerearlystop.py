@@ -492,6 +492,32 @@ class GroupTrainerEarlyStop(BasicTrainer):
             worst_case_metrics[f'worst_case_{base_metric_name}'] = worst_case_value
         
         return worst_case_metrics
+    def aggregate_average_metrics(self, mean_eval_metrics: Dict[str, Union[float, List[float]]]):
+        """Aggregate the average metrics from multiple datasets."""
+
+        # Initialize a dictionary to store the average results
+        average_metrics = {}
+
+        # Iterate over each metric in the first dataset as a base
+        for metric_name in mean_eval_metrics[0].keys():
+            # Extract the base name of the metric to group similar metrics (assuming metric_name ends with '_{integer}')
+            base_metric_name = '_'.join(metric_name.split('_')[:-1])
+
+            # Initialize a variable to store the sum of metric values
+            sum_metric_value = 0
+
+            # Iterate over all datasets to calculate the sum of metric values
+            for group_idx,eval_metrics in enumerate(mean_eval_metrics.values()):
+                metric_value = eval_metrics[f"{base_metric_name}_{group_idx}"]
+                sum_metric_value += metric_value
+            length=group_idx+1
+            # Calculate the average metric value
+            average_metric_value = sum_metric_value / length
+
+            # Store the average result in the dictionary
+            average_metrics[f'average_{base_metric_name}'] = average_metric_value
+
+        return average_metrics
     
     def train(self):
         """Begin either SFT or DPO training, with periodic evaluation."""
@@ -556,6 +582,9 @@ class GroupTrainerEarlyStop(BasicTrainer):
 
                 worst_case_eval_metrics=self.aggregate_worst_case_metrics(mean_eval_metrics)
                 self.log_worst_case_results(worst_case_eval_metrics, 'test')
+
+                avg_case_eval_metrics=self.aggregate_average_metrics(mean_eval_metrics)
+                self.log_average_results(avg_case_eval_metrics, 'test')
                     
                 if self.example_counter > 0 and self.example_counter % self.config.save_every == 0 :
                     if self.config.debug:
@@ -572,6 +601,9 @@ class GroupTrainerEarlyStop(BasicTrainer):
                         mean_train_metrics[i]=self.evaluate(eval_grp=f'train_{i}')
                     worst_case_train_metrics=self.aggregate_worst_case_metrics(mean_train_metrics)
                     self.log_worst_case_results(worst_case_train_metrics, 'train')
+
+                    avg_case_train_metrics=self.aggregate_average_metrics(mean_train_metrics)
+                    self.log_average_results(avg_case_train_metrics, 'train')
                     #mean_eval_metrics_0=self.evaluate(eval_grp='train_0')
                     #mean_eval_metrics_1=self.batch_evaluate(eval_grp='train_1')
                 
@@ -582,12 +614,28 @@ class GroupTrainerEarlyStop(BasicTrainer):
                     worst_case_vald_metrics=self.aggregate_worst_case_metrics(mean_vald_metrics)
                     self.log_worst_case_results(worst_case_vald_metrics, 'vald')
 
+                    avg_case_vald_metrics=self.aggregate_average_metrics(mean_vald_metrics)
+                    self.log_average_results(avg_case_vald_metrics, 'vald')
+
                     if self.config.scheduler_metric=='accuracy':
-                        worst_case_vald_accuracies=worst_case_vald_metrics['worst_case_rewards_vald/accuracies']
-                        self.scheduler.step(worst_case_vald_accuracies)
+                        if self.config.loss.name in {'rdpo', 'ripo'}:
+                            worst_case_vald_accuracies=worst_case_vald_metrics['worst_case_rewards_vald/accuracies']
+                            self.scheduler.step(worst_case_vald_accuracies)
+                        elif self.config.loss.name in {'dpo', 'ipo'}:
+                            avg_case_vald_accuracies=avg_case_vald_metrics['average_rewards_vald/accuracies']
+                            self.scheduler.step(avg_case_vald_accuracies)
+                        else:
+                            raise ValueError(f"Unknown loss function {self.config.loss.name}")
                     elif self.config.scheduler_metric=='loss':
-                        worst_case_vald_losses=worst_case_vald_metrics['worst_case_loss/vald']
-                        self.scheduler.step(-worst_case_vald_losses)
+                        if self.config.loss.name in {'rdpo', 'ripo'}:
+                            worst_case_vald_losses=worst_case_vald_metrics['worst_case_loss/vald']
+                            self.scheduler.step(-worst_case_vald_losses)
+                        elif self.config.loss.name in {'dpo', 'ipo'}:
+                            avg_case_vald_losses=avg_case_vald_metrics['average_loss/vald']
+                            self.scheduler.step(-avg_case_vald_losses)
+                            rank0_print('using average loss for scheduler')
+                        else:
+                            raise ValueError(f"Unknown loss function {self.config.loss.name}")
                     else:
                         raise ValueError(f"Unknown scheduler metric {self.config.scheduler_metric}")
 
@@ -728,6 +776,9 @@ class GroupTrainerEarlyStop(BasicTrainer):
         worst_case_eval_metrics=self.aggregate_worst_case_metrics(mean_eval_metrics)
         self.log_worst_case_results(worst_case_eval_metrics, 'test')
 
+        avg_case_eval_metrics=self.aggregate_average_metrics(mean_eval_metrics)
+        self.log_average_results(avg_case_eval_metrics, 'test')
+
         if self.config.eval_train_end==True:
             mean_train_metrics={}
             for i in range(len(self.config.datasets)):
@@ -735,6 +786,9 @@ class GroupTrainerEarlyStop(BasicTrainer):
             
             worst_case_train_metrics=self.aggregate_worst_case_metrics(mean_train_metrics)
             self.log_worst_case_results(worst_case_train_metrics, 'train')
+
+            avg_case_train_metrics=self.aggregate_average_metrics(mean_train_metrics)
+            self.log_average_results(avg_case_train_metrics, 'train')
    
     def evaluate(self,eval_grp:str):
         train_test, group_id = eval_grp.split("_")
@@ -908,3 +962,29 @@ class GroupTrainerEarlyStop(BasicTrainer):
             writer.writerow(row)
 
         print(f"Logged worst-case results for {eval_grp} with metrics: {worst_case_metrics}")
+
+    def log_average_results(self, average_metrics, eval_grp):
+        """Logs average evaluation results to different sinks such as Weights & Biases and local CSV files."""
+        # Log to Weights & Biases if enabled and if the current process is rank 0 (to avoid duplicate logs in multi-GPU setups)
+        if self.config.wandb.enabled and self.rank == 0:
+            wandb.log(average_metrics, step=self.example_counter)
+
+        # Define CSV file path for average metrics
+        results_csv_path = os.path.join(self.run_dir, f"{self.config.datasets[0]}_average_results.csv")
+
+        # Check if the file exists to decide whether to write headers
+        file_exists = os.path.exists(results_csv_path)
+
+        # Write results to the CSV file
+        with open(results_csv_path, mode='a' if file_exists else 'w', newline='') as file:
+            writer = csv.writer(file)
+            if not file_exists:  # Write headers if the file does not exist
+                headers = ["Experiment Name"] + list(average_metrics.keys())
+                writer.writerow(headers)
+
+            # Prepare the row to be written
+            row = [self.config.exp_name] + list(average_metrics.values())
+            writer.writerow(row)
+
+        print(f"Logged average results for {eval_grp} with metrics: {average_metrics}")
+

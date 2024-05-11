@@ -65,7 +65,7 @@ def main(config: DictConfig):
     """Main entry point for training. Validates config, creates/initializes model(s), and kicks off worker process(es)."""
 
     if config.loss.name in {'dpo','ipo'}:
-        exp_name=f"{config.loss.name}_beta_{config.loss.beta}_seed_{config.seed}_batch_{config.batch_size}_nepoch_{config.n_epochs}_lr_{config.lr}"
+        exp_name=f"{config.loss.name}_beta_{config.loss.beta}_seed_{config.seed}_batch_{config.batch_size}_nepoch_{config.n_epochs}_lr_{config.lr}_avg_fr_vald"
     elif config.loss.name in {'sft','base'}:
         exp_name=f"{config.loss.name}_seed_{config.seed}_batch_{config.batch_size}_nepoch_{config.n_epochs}_lr_{config.lr}"
     elif config.loss.name in {'rdpo','ripo'}:
