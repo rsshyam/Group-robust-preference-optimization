@@ -27,8 +27,8 @@ EVAL_TRAIN_EVERY=192
 EVAL_ONLY_ONCE="False"
 NSEEDS=4
 PATIENCE_FACTOR=2
-SCHEDULER_METRIC="accuracy"
-ADAPTIVE_STEP_SIZE="False"
+SCHEDULER_METRIC="loss"
+ADAPTIVE_STEP_SIZE="True"
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   key="$1"
