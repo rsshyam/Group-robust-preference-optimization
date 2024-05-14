@@ -111,7 +111,8 @@ class GroupTrainerEarlyStop(BasicTrainer):
             sep_pairs=config.sep_pairs,
             group_handling=True,
             test_dataset=config.test_dataset,
-            train_frac=config.train_frac
+            train_frac=config.train_frac,
+            seed=self.seed
         )
 
         self.policy = policy
