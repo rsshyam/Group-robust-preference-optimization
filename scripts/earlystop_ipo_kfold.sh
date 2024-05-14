@@ -1,0 +1,1 @@
+sh scripts/run_multi.sh --model gemma-7b --use_kfoldsplit True --eval_every 960 --datasets goqa_0,goqa_1,goqa_2,goqa_3,goqa_4 --model_archive /scratch/uceesr4/.cache/uceesr4/goqa_0_1_2_3_4tr_frac0.8google/gemma-7b_spairs_False_GroupTrainer/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-05-08_17-42-05_815286/LATEST/policy.pt --trainer GroupTrainerEarlyStop

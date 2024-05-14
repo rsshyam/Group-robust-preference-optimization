@@ -86,7 +86,10 @@ def plot_questions_by_country(df, title_suffix=""):
 def create_goqa_data(df,split,train_frac=0.8, multi_pair=False,n_pairs=4,split_idx=0):
     num_folds = 5  # Example: 5-fold cross-validation
     kf = KFold(n_splits=num_folds, shuffle=True, random_state=42)
-    splits=kf.split(df)
+    splits=list(kf.split(df))
+
+    if split_idx>=num_folds:
+        raise ValueError('invalid split id')
 
     train_index, test_index = splits[split_idx]
     df_train = df.iloc[train_index]

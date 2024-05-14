@@ -89,6 +89,10 @@ class GroupTrainerEarlyStop(BasicTrainer):
         self.n_groups=len(config.datasets)
         self.normalize_loss=False
         
+        if config.use_kfoldsplit:
+            self.split_idx=config.seed
+        else:
+            self.split_idx=None
 
         tokenizer_name_or_path = config.model.tokenizer_name_or_path or config.model.name_or_path
         rank0_print(f'Loading tokenizer {tokenizer_name_or_path}')
@@ -112,7 +116,7 @@ class GroupTrainerEarlyStop(BasicTrainer):
 
         self.policy = policy
         self.reference_model = reference_model
-        self.group_counts= get_batch_iterator(**data_iterator_kwargs, split='train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0, cache_dir=get_local_dir(config.local_dirs),mode='count_groups')
+        self.group_counts= get_batch_iterator(**data_iterator_kwargs, split='train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0, cache_dir=get_local_dir(config.local_dirs),mode='count_groups',split_idx=self.split_idx)
         self.total_count=sum(self.group_counts)
         if self.total_count>2000 and config.loss.name != 'sft':
             rank0_print('creating validation set for early stopping')
@@ -121,7 +125,7 @@ class GroupTrainerEarlyStop(BasicTrainer):
             rank0_print('dataset too small for validation set of early stopping')
             self.early_stopping=False
 
-        self.train_iterator = get_batch_iterator(**data_iterator_kwargs, split=f'train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0, cache_dir=get_local_dir(config.local_dirs))
+        self.train_iterator = get_batch_iterator(**data_iterator_kwargs, split=f'train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0, cache_dir=get_local_dir(config.local_dirs),split_idx=self.split_idx)
         
         
         rank0_print(f'Loaded train data iterator')
@@ -187,25 +191,25 @@ class GroupTrainerEarlyStop(BasicTrainer):
             if self.config.eval_train_full == True:#evaluate part of train data at the end to compare
                 for i in range(len(data_iterator_kwargs_eval)):
                     ##for metrics
-                    self.traineval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                    self.traineval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                     rank0_print(f'Loaded Train-eval data iterator {i}')
                     self.traineval_batches[i] = list(self.traineval_iterator[i])
 
                     ###for sampling
-                    self.traingen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train_gen', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                    self.traingen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train_gen', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                     rank0_print(f'Loaded Train-gen data iterator {i}')
                     self.traingen_batches[i] = list(self.traingen_iterator[i])
                 
             else:
                 for i in range(len(data_iterator_kwargs_eval)):
                     ##for metrics
-                    self.traineval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                    self.traineval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                     rank0_print(f'Loaded Train-eval data iterator {i}')
                     self.traineval_batches[i] = list(self.traineval_iterator[i])
                     #wandb.log({'train_eval_batches': len(self.traineval_batches[i])})
 
                     ###for sampling
-                    self.traingen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                    self.traingen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                     rank0_print(f'Loaded Train-gen data iterator {i}')
                     self.traingen_batches[i] = list(self.traingen_iterator[i])
 
@@ -216,25 +220,25 @@ class GroupTrainerEarlyStop(BasicTrainer):
         if self.config.eval_full==True:
             for i in range(len(data_iterator_kwargs_eval)):
                 ###for metrics
-                self.eval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='test', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.eval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='test', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                 self.eval_batches[i] = list(self.eval_iterator[i])
                 rank0_print(f'Loaded {len(self.eval_batches[i])} eval batches of size {self.config.eval_batch_size} from {i}')
 
                 ###for sampling
-                self.gen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='test_gen', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.gen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='test_gen', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                 rank0_print(f'Loaded Test-gen data iterator {i}')
                 self.gen_batches[i] = list(self.gen_iterator[i])
 
         else:
             for i in range(len(data_iterator_kwargs_eval)):
                 ####for metrics
-                self.eval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='test', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.eval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='test', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                 self.eval_batches[i] = list(self.eval_iterator[i])
                 rank0_print(f'Loaded {len(self.eval_batches[i])} eval batches of size {self.config.eval_batch_size} from 1')
                 #wandb.log({'eval_batches': len(self.eval_batches[i])})
 
                 ###for sampling
-                self.gen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='test_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.gen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='test_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                 rank0_print(f'Loaded Test-gen data iterator {i}')
                 self.gen_batches[i] = list(self.gen_iterator[i])
 
@@ -263,25 +267,25 @@ class GroupTrainerEarlyStop(BasicTrainer):
             if self.config.eval_train_full == True:#evaluate part of train data at the end to compare
                 for i in range(len(data_iterator_kwargs_eval)):
                     ##for metrics
-                    self.traineval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                    self.traineval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                     rank0_print(f'Loaded Train-eval data iterator {i}')
                     self.traineval_batches[i] = list(self.traineval_iterator[i])
 
                     ###for sampling
-                    self.traingen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train_gen', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                    self.traingen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train_gen', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                     rank0_print(f'Loaded Train-gen data iterator {i}')
                     self.traingen_batches[i] = list(self.traingen_iterator[i])
                 
             else:
                 for i in range(len(data_iterator_kwargs_eval)):
                     ##for metrics
-                    self.traineval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                    self.traineval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                     rank0_print(f'Loaded Train-eval data iterator {i}')
                     self.traineval_batches[i] = list(self.traineval_iterator[i])
                     #wandb.log({'train_eval_batches': len(self.traineval_batches[i])})
 
                     ###for sampling
-                    self.traingen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                    self.traingen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='train_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                     rank0_print(f'Loaded Train-gen data iterator {i}')
                     self.traingen_batches[i] = list(self.traingen_iterator[i])
 
@@ -292,25 +296,25 @@ class GroupTrainerEarlyStop(BasicTrainer):
         if self.config.eval_full==True:
             for i in range(len(data_iterator_kwargs_eval)):
                 ###for metrics
-                self.eval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='truetest', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.eval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='truetest', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                 self.eval_batches[i] = list(self.eval_iterator[i])
                 rank0_print(f'Loaded {len(self.eval_batches[i])} eval batches of size {self.config.eval_batch_size} from {i}')
 
                 ###for sampling
-                self.gen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='truetest_gen', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.gen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='truetest_gen', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                 rank0_print(f'Loaded Test-gen data iterator {i}')
                 self.gen_batches[i] = list(self.gen_iterator[i])
 
         else:
             for i in range(len(data_iterator_kwargs_eval)):
                 ####for metrics
-                self.eval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='truetest', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.eval_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='truetest', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                 self.eval_batches[i] = list(self.eval_iterator[i])
                 rank0_print(f'Loaded {len(self.eval_batches[i])} eval batches of size {self.config.eval_batch_size} from {i}')
                 #wandb.log({'eval_batches': len(self.eval_batches[i])})
 
                 ###for sampling
-                self.gen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='truetest_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.gen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='truetest_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                 rank0_print(f'Loaded Test-gen data iterator {i}')
                 self.gen_batches[i] = list(self.gen_iterator[i])
 
@@ -321,25 +325,25 @@ class GroupTrainerEarlyStop(BasicTrainer):
         if self.config.eval_full==True:
             for i in range(len(data_iterator_kwargs_eval)):
                 ###for metrics
-                self.vald_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='valtest', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.vald_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='valtest', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                 self.vald_batches[i] = list(self.vald_iterator[i])
                 rank0_print(f'Loaded {len(self.vald_batches[i])} validation batches of size {self.config.eval_batch_size} from {i}')
 
                 ###for sampling
-                self.valdgen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='valtest_gen', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.valdgen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='valtest_gen', n_epochs=self.config.n_epochs, n_examples=self.config.n_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                 rank0_print(f'Loaded validation-gen data iterator {i}')
                 self.valdgen_batches[i] = list(self.valdgen_iterator[i])
 
         else:
             for i in range(len(data_iterator_kwargs_eval)):
                 ####for metrics
-                self.vald_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='valtest', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.vald_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='valtest', n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                 self.vald_batches[i] = list(self.vald_iterator[i])
                 rank0_print(f'Loaded {len(self.eval_batches[i])} validation batches of size {self.config.eval_batch_size} from {i}')
                 #wandb.log({'eval_batches': len(self.eval_batches[i])})
 
                 ###for sampling
-                self.valdgen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='valtest_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs))
+                self.valdgen_iterator[i] = get_batch_iterator(**data_iterator_kwargs_eval[i], split='valtest_gen',  n_examples=self.config.n_eval_examples, batch_size=self.config.eval_batch_size, silent=self.rank != 0, cache_dir=get_local_dir(self.config.local_dirs),split_idx=self.split_idx)
                 rank0_print(f'Loaded Test-gen data iterator {i}')
                 self.valdgen_batches[i] = list(self.valdgen_iterator[i])
 

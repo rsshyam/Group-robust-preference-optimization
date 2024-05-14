@@ -67,14 +67,16 @@ def create_filter_dicts(groups: list[str],n_epochs: int, base: bool=False, setti
         'State': 'finished',
         'config.n_epochs': n_epochs,
         'config.loss.beta': 0.01,
-        'config.loss.label_smoothing': 0
+        'config.loss.label_smoothing': 0,
+        'config.use_kfoldsplit': True
     }
     base_filter_ripo = {
         'State': 'finished',
         'config.loss.name': 'ripo',
         'config.n_epochs': n_epochs,
         'config.loss.beta': 0.01,
-        'config.loss.label_smoothing': 0
+        'config.loss.label_smoothing': 0,
+        'config.use_kfoldsplit': True
     }
     base_filter_sft = {
         'State': 'finished',
@@ -352,6 +354,16 @@ def generate_metrics(base_name, count, mode='eval', separator='_'):
         metrics.append(f'{modified_base_name}_{i}')
     metrics.append(f'worst_case_{modified_base_name}')
     return metrics
+def pad_with_last_value(seq, max_length):
+    last_value = seq[-1]
+    padding = [last_value] * (max_length - len(seq))
+    return seq + padding
+
+def pad_series_with_last_value(series, max_length):
+    last_value = series.iloc[-1]
+    padding = [last_value] * (max_length - len(series))
+    padded_series = series.tolist() + padding
+    return padded_series
 
 def main():
     setting = 'goqa_5_gemma2b'  # convention X_Y_Z: X={'even','uneven'}, Y={'balanced','imbalanced'}, Z={'dpo','ipo','all'}
@@ -459,8 +471,16 @@ def main():
             #print(all_metrics_history[metric])
             values_matrix = all_metrics_history[metric][i]
             #print('VAL MATRIX: ', values_matrix[0:2])
+            # Find the maximum length of the sequences
+            print(values_matrix)
+            max_length = max(len(seq) for seq in values_matrix)
 
-            values_matrix = np.array(values_matrix)
+            # Pad the sequences with their last value to make them of equal length
+            padded_values_matrix = [pad_series_with_last_value(seq.iloc[:,0], max_length) for seq in values_matrix]
+
+            # Convert to a NumPy array
+            values_matrix = np.array(padded_values_matrix)
+            #values_matrix = np.array(values_matrix)
             #print(values_matrix.shape)
 
             avg_values = np.mean(values_matrix, axis=0)

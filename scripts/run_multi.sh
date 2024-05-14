@@ -26,6 +26,7 @@ NSEEDS=4
 EVAL_ONLY_ONCE="False"
 PATIENCE_FACTOR=2
 SCHEDULER_METRIC="loss"
+USE_KFOLDSPLIT="False"
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   key="$1"
@@ -115,6 +116,11 @@ while [[ $# -gt 0 ]]; do
       shift # past argument
       shift # past value
       ;;
+    --use_kfoldsplit)
+      USE_KFOLDSPLIT="$2"
+      shift # past argument
+      shift # past value
+      ;;
     --eval_every)
       EVAL_EVERY="$2"
       shift # past argument
@@ -151,5 +157,5 @@ done
 for SEED in $(seq 0 $NSEEDS)
 do
   echo "Running training with seed $SEED"
-  python -u train.py model=$MODEL datasets=[$DATASETS] train_frac=$TRAIN_FRAC patience_factor=$PATIENCE_FACTOR scheduler_metric=$SCHEDULER_METRIC loss=$LOSS gradient_accumulation_steps=$GRADIENT_ACCUMULATION_STEPS batch_size=$BATCH_SIZE eval_batch_size=$EVAL_BATCH_SIZE sample_during_eval=$SAMPLE_DURING_EVAL trainer=$TRAINER lr=$LR model.archive=$MODEL_ARCHIVE loss.beta=$LOSS_BETA seed=$SEED n_epochs=$N_EPOCHS eval_every=$EVAL_EVERY eval_train_every=$EVAL_TRAIN_EVERY eval_only_once=$EVAL_ONLY_ONCE loss.label_smoothing=$LABEL_SMOOTHING
+  python -u train.py model=$MODEL datasets=[$DATASETS] use_kfoldsplit=$USE_KFOLDSPLIT train_frac=$TRAIN_FRAC patience_factor=$PATIENCE_FACTOR scheduler_metric=$SCHEDULER_METRIC loss=$LOSS gradient_accumulation_steps=$GRADIENT_ACCUMULATION_STEPS batch_size=$BATCH_SIZE eval_batch_size=$EVAL_BATCH_SIZE sample_during_eval=$SAMPLE_DURING_EVAL trainer=$TRAINER lr=$LR model.archive=$MODEL_ARCHIVE loss.beta=$LOSS_BETA seed=$SEED n_epochs=$N_EPOCHS eval_every=$EVAL_EVERY eval_train_every=$EVAL_TRAIN_EVERY eval_only_once=$EVAL_ONLY_ONCE loss.label_smoothing=$LABEL_SMOOTHING
 done

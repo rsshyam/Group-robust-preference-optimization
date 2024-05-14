@@ -12,6 +12,7 @@ import numpy as np
 from typing import Dict, List, Optional, Iterator, Callable, Union, Tuple
 from src.groupstuff.data_processing import get_oqa,get_oqa_group,get_hh_datasets
 from src.groupstuff.global_opinion_data_processing import get_goqa
+from src.groupstuff.global_opinion_data_processing_kfold import get_goqa_kfold
 
 def extract_anthropic_prompt(prompt_and_response):
     """Extract the anthropic prompt from a prompt and response pair."""
@@ -162,7 +163,7 @@ def get_hh(split: str, silent: bool = False, cache_dir: str = None) -> Dict[str,
     return data
 
 
-def get_dataset(name: str, split: str, train_frac: float = 0.8, silent: bool = False, cache_dir: str = None, test:bool = False):
+def get_dataset(name: str, split: str, train_frac: float = 0.8, silent: bool = False, cache_dir: str = None, test:bool = False, split_idx: int = None):
     """Load the given dataset by name. Supported by default are 'shp', 'hh', and 'se'."""
     if name == 'shp':
         data = get_shp(split=split, silent=silent, cache_dir=cache_dir)
@@ -175,7 +176,10 @@ def get_dataset(name: str, split: str, train_frac: float = 0.8, silent: bool = F
         data=get_goqa(split=split,train_frac= train_frac,group_id= group_id,multi_pair=True, silent=silent, cache_dir=cache_dir)
     elif 'goqa' in name:
         group_id=int(name.split('_')[-1])
-        data=get_goqa(split=split,train_frac=train_frac,group_id= group_id,multi_pair=False, silent=silent, cache_dir=cache_dir)
+        if not split_idx:
+            data=get_goqa(split=split,train_frac=train_frac,group_id= group_id,multi_pair=False, silent=silent, cache_dir=cache_dir)
+        else:
+            data=get_goqa_kfold(split=split,train_frac=train_frac,group_id= group_id,multi_pair=False, silent=silent, cache_dir=cache_dir, split_idx=split_idx)
     elif 'oqa' in name:
         namesplit = name.split('_') # name format e.g. "oqa_SEX_Male" here
         attribute = namesplit[1]

@@ -6,6 +6,7 @@ exp_name: ???
 
 group_name: ???
 
+use_kfoldsplit: False
 # the batch size for training; for FSDP, the batch size per GPU is batch_size / (grad_accumulation_steps * num_gpus)
 batch_size: 4
 
