@@ -154,7 +154,7 @@ def create_goqa_data(df,split,train_frac=0.8, multi_pair=False,n_pairs=4,split_i
     #print(len(data))
     return data
 
-def get_goqa(split: str, train_frac: float = 0.8, group_id: int = None, multi_pair: bool = False,n_pairs: int=4, silent: bool = False, cache_dir: str = None, split_idx=0):
+def get_goqa_kfold(split: str, train_frac: float = 0.8, group_id: int = None, multi_pair: bool = False,n_pairs: int=4, silent: bool = False, cache_dir: str = None, split_idx=0):
     if group_id==None:
         group_filter = COUNTRIES
     else:

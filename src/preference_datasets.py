@@ -489,7 +489,8 @@ def get_batch_iterator(names: List[str],
                        train_frac: float=0.8,
                        sep_pairs: bool = False,
                        weighted: bool = False,
-                       mode: str = 'batch_iterator') -> Iterator[Dict]:
+                       mode: str = 'batch_iterator',
+                       split_idx: int = None) -> Iterator[Dict]:
     """Get an iterator over batches of data with optional group handling. 
     Stops after n_epochs or n_examples, whichever comes first.
 
@@ -528,12 +529,12 @@ def get_batch_iterator(names: List[str],
         for name in names:
             truncation_mode = 'keep_end' if name in ['hh', 'har', 'hel', 'helon', 'helrej', 'heltot'] else 'keep_start'
             if mode=='batch_iterator':
-                dataset = get_dataset(name=name, train_frac=train_frac, split=split, silent=silent, cache_dir=cache_dir, test=test_dataset)
+                dataset = get_dataset(name=name, train_frac=train_frac, split=split, silent=silent, cache_dir=cache_dir, test=test_dataset, split_idx=split_idx)
                 group_id = names.index(name) if group_handling else None
                 flat_data.extend(process_dataset(dataset, truncation_mode, sep_pairs,unique_prompts,group_handling,group_id))
             elif mode=='count_groups':
                 g_len=0
-                for prompt, data in get_dataset(name=name, train_frac=train_frac, split=split, silent=silent, cache_dir=cache_dir, test=test_dataset).items():
+                for prompt, data in get_dataset(name=name, train_frac=train_frac, split=split, silent=silent, cache_dir=cache_dir, test=test_dataset, split_idx=split_idx).items():
                     g_len+= 1 if unique_prompts else len(data['pairs'])
                 group_counts.append(g_len)
     
