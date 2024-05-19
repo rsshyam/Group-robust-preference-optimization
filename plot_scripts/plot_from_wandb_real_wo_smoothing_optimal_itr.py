@@ -68,7 +68,9 @@ def create_filter_dicts(groups: list[str],n_epochs: int, base: bool=False, setti
         'config.n_epochs': n_epochs,
         'config.loss.beta': 0.01,
         'config.loss.label_smoothing': 0,
-        'config.use_kfoldsplit': True
+        'config.use_kfoldsplit': False,
+        'config.optimizer': 'RMSprop',
+        'config.model.archive': '/home/ubuntu/shyam-rdpo/direct-preference-optimization/.cache/ubuntu/goqa_0_1_2_3_4tr_frac0.8google/gemma-2b_spairs_False_GroupTrainer/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-05-09_15-42-23_063138/LATEST/policy.pt'
     }
     base_filter_ripo = {
         'State': 'finished',
@@ -76,8 +78,32 @@ def create_filter_dicts(groups: list[str],n_epochs: int, base: bool=False, setti
         'config.n_epochs': n_epochs,
         'config.loss.beta': 0.01,
         'config.loss.label_smoothing': 0,
-        'config.use_kfoldsplit': True
+        'config.use_kfoldsplit': False,
+        'config.optimizer': 'RMSprop',
+        'config.model.archive': '/home/ubuntu/shyam-rdpo/direct-preference-optimization/.cache/ubuntu/goqa_0_1_2_3_4tr_frac0.8google/gemma-2b_spairs_False_GroupTrainer/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-05-09_15-42-23_063138/LATEST/policy.pt'
     }
+
+    base_filter_ipo_adam = {
+        'config.loss.name': 'ipo',
+        'State': 'finished',
+        'config.n_epochs': n_epochs,
+        'config.loss.beta': 0.01,
+        'config.loss.label_smoothing': 0,
+        'config.use_kfoldsplit': False,
+        'config.optimizer': 'AdamW',
+        'config.model.archive': '/home/ubuntu/shyam-rdpo/direct-preference-optimization/.cache/ubuntu/goqa_0_1_2_3_4tr_frac0.8google/gemma-2b_spairs_False_GroupTrainer/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-05-09_15-42-23_063138/LATEST/policy.pt'
+    }
+    base_filter_ripo_adam = {
+        'State': 'finished',
+        'config.loss.name': 'ripo',
+        'config.n_epochs': n_epochs,
+        'config.loss.beta': 0.01,
+        'config.loss.label_smoothing': 0,
+        'config.use_kfoldsplit': False,
+        'config.optimizer': 'AdamW',
+        'config.model.archive': '/home/ubuntu/shyam-rdpo/direct-preference-optimization/.cache/ubuntu/goqa_0_1_2_3_4tr_frac0.8google/gemma-2b_spairs_False_GroupTrainer/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-05-09_15-42-23_063138/LATEST/policy.pt'
+    }
+    #{'$nin': ['turin.ee.ucl.ac.uk', 'geneva.ee.ucl.ac.uk', 'athens.ee.ucl.ac.uk']}
     base_filter_sft = {
         'State': 'finished',
         'config.loss.name':'sft',
@@ -104,12 +130,21 @@ def create_filter_dicts(groups: list[str],n_epochs: int, base: bool=False, setti
         gemma_base_filter={**base_filter_gemma_base, 'group': groups[0]}
         return [ripo_filter, ripo_filter_2, ipo_filter,gemma_base_filter] if base else [ripo_filter, ipo_filter]
     elif setting=='ipo_earlystoploss':
-        ripo_filter = {**base_filter_ripo, 'group': groups[0], 'config.loss.importance_sampling': False,'config.loss.divide_by_totalcount': True, 'config.loss.step_size': 0.000001, 'config.patience_factor': 2, 'config.lr': 0.0001, 'config.scheduler_metric': 'loss'} 
-        ripo_filter_2 = {**base_filter_ripo, 'group': groups[0], 'config.loss.importance_sampling': False, 'config.loss.divide_by_totalcount': False, 'config.loss.step_size': 0.000001, 'config.patience_factor': 2, 'config.lr': 0.0001, 'config.scheduler_metric': 'loss'}
+        ripo_filter = {**base_filter_ripo, 'group': groups[0], 'config.loss.importance_sampling': False,'config.loss.divide_by_totalcount': True, 'config.loss.step_size': 0.0000001, 'config.patience_factor': 2, 'config.lr': 0.00002, 'config.scheduler_metric': 'loss','config.loss.step_factor': 0.5} 
+        ripo_filter_2 = {**base_filter_ripo, 'group': groups[0], 'config.loss.importance_sampling': False, 'config.loss.divide_by_totalcount': True, 'config.loss.step_size': 0.000001, 'config.patience_factor': 2, 'config.lr': 0.0001, 'config.scheduler_metric': 'loss'}
         ipo_filter = {**base_filter_ipo, 'group': groups[0], 'config.patience_factor': 2, 'config.lr': 0.0001, 'config.scheduler_metric': 'loss', 'display_name': {"$regex":".*avg_fr_vald.*"}}
+        ipo_filter_2 = {**base_filter_ipo, 'group': groups[0], 'config.patience_factor': 2, 'config.lr': 0.00001, 'config.scheduler_metric': 'loss', 'display_name': {"$regex":".*avg_fr_vald.*"}}
         sft_filter = {**base_filter_sft, 'group': groups[0]}
         gemma_base_filter={**base_filter_gemma_base, 'group': groups[0]}
-        return [ripo_filter, ripo_filter_2, ipo_filter,gemma_base_filter] if base else [ripo_filter,ripo_filter_2, ipo_filter]
+        return [ripo_filter, ripo_filter_2, ipo_filter,gemma_base_filter] if base else [ripo_filter, ipo_filter_2]
+    elif setting=='ipo_earlystoplossadam':
+        ripo_filter = {**base_filter_ripo_adam, 'group': groups[0], 'config.loss.importance_sampling': False,'config.loss.divide_by_totalcount': True, 'config.loss.step_size': 0.0000005, 'config.patience_factor': 2, 'config.lr': 0.00006, 'config.scheduler_metric': 'loss','config.loss.step_factor': 0.5} 
+        #ripo_filter_2 = {**base_filter_ripo, 'group': groups[0], 'config.loss.importance_sampling': False, 'config.loss.divide_by_totalcount': True, 'config.loss.step_size': 0.000001, 'config.patience_factor': 2, 'config.lr': 0.0001, 'config.scheduler_metric': 'loss'}
+        #ipo_filter = {**base_filter_ipo, 'group': groups[0], 'config.patience_factor': 2, 'config.lr': 0.0001, 'config.scheduler_metric': 'loss', 'display_name': {"$regex":".*avg_fr_vald.*"}}
+        ipo_filter_2 = {**base_filter_ipo_adam, 'group': groups[0], 'config.patience_factor': 2, 'config.lr': 0.00003, 'config.scheduler_metric': 'loss', 'display_name': {"$regex":".*avg_fr_vald.*"}}
+        sft_filter = {**base_filter_sft, 'group': groups[0]}
+        gemma_base_filter={**base_filter_gemma_base, 'group': groups[0]}
+        return [ripo_filter, ripo_filter_2, ipo_filter,gemma_base_filter] if base else [ripo_filter, ipo_filter_2]
 
     filters = []
     for group in groups:
@@ -132,14 +167,21 @@ def determine_algorithm(filters_dict):
             base_algo  = algo.split('r')[-1]
             return f'{base_algo} Importance Sampling'
         step_size=filters_dict['config.loss.step_size']
+        lr=filters_dict['config.lr']
         divide_by_totalcount=filters_dict['config.loss.divide_by_totalcount']
         if divide_by_totalcount:
-            return f'{algo}_{step_size}_theory'
-        return f'{algo}_{step_size}_prac'
+            if algo=='ripo':
+                return 'GR-IPO'
+            else:
+                return 'GR-DPO'
+            #return f'{algo}_step_{step_size}_lr_{lr}_theory'
+        return f'{algo}_step_{step_size}_lr_{lr}_prac'
     
     if filters_dict['config.loss.name'] in {'dpo','ipo'}:
         algo=filters_dict['config.loss.name']
-        return algo
+        lr=filters_dict['config.lr']
+        #return f'{algo}_lr_{lr}'
+        return 'IPO'
     return 'RDPO'
 
 def prepare_metric_data(filters_dicts, metrics,all_avg_metrics_at_iterations,all_sem_metrics_at_iterations,metric_titles):
@@ -163,6 +205,9 @@ def prepare_metric_data(filters_dicts, metrics,all_avg_metrics_at_iterations,all
     return metric_values, metric_sem, labels
 
 def plot_metric_with_error_bands(iteration_index, metric_values, metric_sem, labels, plot_title, subfolder_path, file_name,metric, colors=None, eval_every=192, running_avg_window=None):
+
+    titles={'worst_case_rewards_eval/accuracies over Iterations':'Min Rewards Accuracies (Test)','worst_case_loss/eval over Iterations':'Max Group Loss (Test)','worst_case_logps_pol_eval/accuracies over Iterations':'Min Log-Prob Accuracies (Test)'}
+
     plt.figure(figsize=(12, 6))
     #for i, (avg, sem) in enumerate(zip(metric_values, metric_sem)):
     min_value = float('inf')
@@ -196,24 +241,33 @@ def plot_metric_with_error_bands(iteration_index, metric_values, metric_sem, lab
         min_value = min(min_value, min(avg - sem))
         max_value = max(max_value, max(avg + sem))
         #print(min_value,max_value)
-    plt.title(plot_title,fontsize=40)
-    plt.xlabel('Iterations',fontsize=40)
-    plt.ylabel('Value',fontsize=40)
-    plt.legend(fontsize=20)
+    if plot_title in titles.keys():
+        plt.title(titles[plot_title],fontsize=55)
+    else:
+        plt.title(plot_title,fontsize=55)
+    plt.xlabel('Iterations',fontsize=50)
+    plt.ylabel('Value',fontsize=50)
+    plt.legend(fontsize=35)
     if 'accuracies' in plot_title:
-        min_value = 0.5
+        min_value = 0.6
         max_value = 0.8
     if 'loss/eval' in plot_title:
         min_value = 1500
     plt.ylim(min_value, max_value)  # Set y-axis limits
+    plt.tick_params(axis='x',which='major',labelsize=35)
+    plt.tick_params(axis='y',which='major',labelsize=35)
     plt.tight_layout()  # Adjust spacing between subplots
     safe_title = file_name.replace('/', '-')
-    neatplot.save_figure(f'{subfolder_path}/{safe_title}')
+    neatplot.save_figure(f'{subfolder_path}/{safe_title}',ext_list='pdf')
     plt.close()
 
 def plot_metric_bars_dpo(metric_config, filters_dicts, subfolder_path, all_avg_metrics_at_iterations, all_sem_metrics_at_iterations):
-    plt.figure(figsize=(12, 6))
 
+    titles={'worst_case_rewards_eval/accuracies':'Min Reward Accuracies (Test)','worst_case_loss/eval':'Max Group Loss (Test)','loss/eval':'Group Loss (Test)'}
+
+    plt.figure(figsize=(12, 6))
+    all_positions = []
+    all_algos = []
     for i, filters_dict in enumerate(filters_dicts):
         algo = determine_algorithm(filters_dict)
         metrics_end_avg = [all_avg_metrics_at_iterations[metric][i][-1] for metric in metric_config['metrics']]
@@ -222,20 +276,38 @@ def plot_metric_bars_dpo(metric_config, filters_dicts, subfolder_path, all_avg_m
         bar_width = 0.1 if 'group_loss' in metric_config['metrics'][0] else 0.2
         offset = i * bar_width
         positions = np.arange(len(metrics_end_avg)) + offset
-        
-        plt.bar(positions, height=metrics_end_avg, yerr=metrics_end_sem, width=bar_width, capsize=5, alpha=0.7, label=f'{algo}')
-        plt.xticks(positions, [f"Group {i+1}" for i in range(len(metrics_end_avg))],fontsize=40)
+        all_positions.append(positions)
+        all_algos.append([algo for _ in range(len(metric_config['metrics']))])
 
-    plt.title(metric_config['title'],fontsize=40)
-    plt.ylabel('Value',fontsize=40)
-    plt.legend(fontsize=40)
+        plt.bar(positions, height=metrics_end_avg, yerr=metrics_end_sem, width=bar_width, capsize=5, alpha=0.7, label=f'{algo}')
+        if 'worst_case' not in metric_config['title']:
+            plt.xticks(positions, [f"Group {i+1}" for i in range(len(metrics_end_avg))],fontsize=35)
+    if 'worst_case' in metric_config['title']:
+        all_positions = np.array(all_positions).flatten()
+        all_algos = np.array(all_algos).flatten()
+        plt.xticks(all_positions,all_algos,fontsize=35)
+    plt.tick_params(axis='x',which='major',labelsize=35)
+    plt.tick_params(axis='y',which='major',labelsize=35)
+    if metric_config['title'] in titles.keys():
+        plt.title(titles[metric_config['title']],fontsize=55)
+    else:
+        plt.title(metric_config['title'],fontsize=55)
+    plt.ylabel('Value',fontsize=50)
+    if 'worst_case' not in metric_config['title']:
+        plt.legend(fontsize=35)
+        plt.xlabel('Groups',fontsize=50)
+    else:
+        plt.xlabel('Methods',fontsize=50)
+    #plt.legend(fontsize=25)
     safe_title = metric_config["title"].replace('/', '-')
     if 'worst_case_rewards_eval/accuracies' in metric_config['title']:
-        plt.ylim(0.65, 0.75)  # Set y-axis limits starting from 0.5
+        plt.ylim(0.68, 0.78)  # Set y-axis limits starting from 0.5
     if 'worst_case_loss/eval' in metric_config['title']:
         plt.ylim(bottom=1500) #set y-axis lower limit to 1000
+    elif 'loss/eval' in metric_config['title']:
+        plt.ylim(bottom=1000)
         
-    neatplot.save_figure(f'{subfolder_path}/{safe_title}_bars')
+    neatplot.save_figure(f'{subfolder_path}/{safe_title}_bars',ext_list='pdf')
     plt.close()
     # Define bar properties
 
@@ -370,7 +442,7 @@ def main():
     n_epochs=30
     group_count=5
     groups= get_setting_details(setting)
-    algo_setting='ipo_earlystoploss'
+    algo_setting='ipo_earlystoplossadam'
     eval_every=960
     filters_dicts = create_filter_dicts(groups,n_epochs,setting=algo_setting)
     smoothing_alpha = 1
@@ -397,8 +469,17 @@ def main():
         {'base_name': 'rewards/accuracies', 'count': group_count, 'mode': 'eval', 'separator': '_'},
         {'base_name': 'rewards/margins', 'count': group_count, 'mode': 'train', 'separator': '_'},
         {'base_name': 'rewards/margins', 'count': group_count, 'mode': 'eval', 'separator': '_'},
+        {'base_name': 'loss', 'count': group_count, 'mode': 'eval', 'separator': '/'},
         {'base_name': 'loss', 'count': group_count, 'mode': 'train', 'separator': '/'},
-        {'base_name': 'loss', 'count': group_count, 'mode': 'eval', 'separator': '/'}
+        {'base_name': 'logps/chosen', 'count': group_count, 'mode': 'vald', 'separator': '_'},
+        {'base_name': 'logps/rejected', 'count': group_count, 'mode': 'vald', 'separator': '_'},
+        {'base_name': 'logps_pol/accuracies', 'count': group_count, 'mode': 'vald', 'separator': '_'},
+        {'base_name': 'rewards/chosen', 'count': group_count, 'mode': 'vald', 'separator': '_'},
+        {'base_name': 'rewards/rejected', 'count': group_count, 'mode': 'vald', 'separator': '_'},
+        {'base_name': 'rewards/accuracies', 'count': group_count, 'mode': 'vald', 'separator': '_'},
+        {'base_name': 'rewards/margins', 'count': group_count, 'mode': 'vald', 'separator': '_'},
+        {'base_name': 'loss', 'count': group_count, 'mode': 'vald', 'separator': '/'},
+        {'base_name': 'rewards/weights', 'count': group_count, 'mode': 'train', 'separator': '_'},
     ]
 
     # Initialize an empty list to collect all generated metrics
@@ -432,7 +513,7 @@ def main():
         runs = download_runs(ENTITY, PROJECT, filters_dict)
         if len(runs)>0:
             all_runs.append(runs)
-            print(len(runs))
+            print(len(runs),filters_dict)
             metrics_history = {}
 
             for metric in metrics_to_collect:
@@ -472,7 +553,7 @@ def main():
             values_matrix = all_metrics_history[metric][i]
             #print('VAL MATRIX: ', values_matrix[0:2])
             # Find the maximum length of the sequences
-            print(values_matrix)
+            #print(values_matrix)
             max_length = max(len(seq) for seq in values_matrix)
 
             # Pad the sequences with their last value to make them of equal length
@@ -489,7 +570,7 @@ def main():
             all_avg_metrics_at_iterations[metric].append(avg_values.ravel())
             all_sem_metrics_at_iterations[metric].append(sem_values.ravel())
     #print(optimal_iteration_indices)
-    print(all_sem_metrics_at_iterations)
+    #print(all_sem_metrics_at_iterations)
     # Create a default dictionary to hold the grouped metrics
     optimal_iteration_indices=None
     plot_configs = defaultdict(list)
