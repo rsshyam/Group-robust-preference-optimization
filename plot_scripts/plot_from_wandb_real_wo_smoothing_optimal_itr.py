@@ -208,12 +208,25 @@ def plot_metric_with_error_bands(iteration_index, metric_values, metric_sem, lab
 
     titles={'worst_case_rewards_eval/accuracies over Iterations':'Min Rewards Accuracies (Test)','worst_case_loss/eval over Iterations':'Max Group Loss (Test)','worst_case_logps_pol_eval/accuracies over Iterations':'Min Log-Prob Accuracies (Test)'}
 
-    plt.figure(figsize=(12, 6))
+    lengths = []
+    for i in range(len((metric_values))):
+        lengths.append(len(metric_values[i]))
+    end = min(lengths)
+    #print('LENGTHS = ', lengths)
+    #print('END = ', end)
+
+    colors = {'IPO': 'orange', 'GR-IPO': 'green'}
+
+    plt.figure(figsize=(12, 8))
     #for i, (avg, sem) in enumerate(zip(metric_values, metric_sem)):
     min_value = float('inf')
     max_value = float('-inf')    
     #print(metric_values,metric_sem,labels)
     for avg, sem, label in zip(metric_values, metric_sem, labels):
+
+        avg = avg[:end]
+        sem = sem[:end]
+
         #if extend and len(avg) != len(iteration_index):
         #print(plot_title)
         match = re.search(r"_grp_(\d+)$", label)
@@ -234,28 +247,38 @@ def plot_metric_with_error_bands(iteration_index, metric_values, metric_sem, lab
         #sem = np.append(sem, [sem[-1]] * (len(new_iteration_index) - len(sem)))
         #color = colors[i] if colors else None
         #print(avg,sem)
-        plt.plot(new_iteration_index[:len(avg)], avg, label=label)
+
+        if label=='GR-IPO':
+            legend_label = r'$\bf{' + label + '}$'
+        else:
+            legend_label = label
+
+        c = 'GR-IPO' if 'GR-IPO' in label else 'IPO'
+        plt.plot(new_iteration_index[:end], avg, label=legend_label, color=colors[c], linewidth=3)
             
-        plt.fill_between(new_iteration_index[:len(avg)], avg - sem, avg + sem, alpha=0.2)
+        plt.fill_between(new_iteration_index[:end], avg - sem, avg + sem, color=colors[c], alpha=0.2)
+
+        plt.grid(visible=True, linewidth=2)
 
         min_value = min(min_value, min(avg - sem))
         max_value = max(max_value, max(avg + sem))
         #print(min_value,max_value)
+
     if plot_title in titles.keys():
         plt.title(titles[plot_title],fontsize=55)
     else:
         plt.title(plot_title,fontsize=55)
-    plt.xlabel('Iterations',fontsize=50)
-    plt.ylabel('Value',fontsize=50)
-    plt.legend(fontsize=35)
+    plt.xlabel('Iterations',fontsize=55)
+    plt.ylabel('Value',fontsize=55)
+    plt.legend(fontsize=40)
     if 'accuracies' in plot_title:
         min_value = 0.6
         max_value = 0.8
     if 'loss/eval' in plot_title:
         min_value = 1500
     plt.ylim(min_value, max_value)  # Set y-axis limits
-    plt.tick_params(axis='x',which='major',labelsize=35)
-    plt.tick_params(axis='y',which='major',labelsize=35)
+    plt.tick_params(axis='x',which='major',labelsize=40)
+    plt.tick_params(axis='y',which='major',labelsize=40)
     plt.tight_layout()  # Adjust spacing between subplots
     safe_title = file_name.replace('/', '-')
     neatplot.save_figure(f'{subfolder_path}/{safe_title}',ext_list='pdf')
@@ -265,7 +288,7 @@ def plot_metric_bars_dpo(metric_config, filters_dicts, subfolder_path, all_avg_m
 
     titles={'worst_case_rewards_eval/accuracies':'Min Reward Accuracies (Test)','worst_case_loss/eval':'Max Group Loss (Test)','loss/eval':'Group Loss (Test)'}
 
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 8))
     all_positions = []
     all_algos = []
     for i, filters_dict in enumerate(filters_dicts):
@@ -277,22 +300,33 @@ def plot_metric_bars_dpo(metric_config, filters_dicts, subfolder_path, all_avg_m
         offset = i * bar_width
         positions = np.arange(len(metrics_end_avg)) + offset
         all_positions.append(positions)
-        all_algos.append([algo for _ in range(len(metric_config['metrics']))])
 
-        plt.bar(positions, height=metrics_end_avg, yerr=metrics_end_sem, width=bar_width, capsize=5, alpha=0.7, label=f'{algo}')
+        def boldface(algo):
+            if algo == 'GR-IPO':
+                return r'$\bf{' + algo + '}$'
+            return algo
+
+        all_algos.append([boldface(algo) for _ in range(len(metric_config['metrics']))])
+
+        if algo=='GR-IPO':
+            legend_label = r'$\bf{' + algo + '}$'
+        else:
+            legend_label = f'{algo}'
+
+        plt.bar(positions, height=metrics_end_avg, yerr=metrics_end_sem, width=bar_width, capsize=5, alpha=0.7, label=legend_label)
         if 'worst_case' not in metric_config['title']:
-            plt.xticks(positions, [f"Group {i+1}" for i in range(len(metrics_end_avg))],fontsize=35)
+            plt.xticks(positions, [f"Group {i+1}" for i in range(len(metrics_end_avg))],fontsize=40)
     if 'worst_case' in metric_config['title']:
         all_positions = np.array(all_positions).flatten()
         all_algos = np.array(all_algos).flatten()
-        plt.xticks(all_positions,all_algos,fontsize=35)
-    plt.tick_params(axis='x',which='major',labelsize=35)
-    plt.tick_params(axis='y',which='major',labelsize=35)
+        plt.xticks(all_positions,all_algos,fontsize=40)
+    plt.tick_params(axis='x',which='major',labelsize=40)
+    plt.tick_params(axis='y',which='major',labelsize=40)
     if metric_config['title'] in titles.keys():
         plt.title(titles[metric_config['title']],fontsize=55)
     else:
         plt.title(metric_config['title'],fontsize=55)
-    plt.ylabel('Value',fontsize=50)
+    plt.ylabel('Value',fontsize=55)
     if 'worst_case' not in metric_config['title']:
         plt.legend(fontsize=35)
         plt.xlabel('Groups',fontsize=50)
@@ -312,7 +346,7 @@ def plot_metric_bars_dpo(metric_config, filters_dicts, subfolder_path, all_avg_m
     # Define bar properties
 
 def plot_metric_bars_dpo_opt_iter(metric_config, filters_dicts, subfolder_path, all_avg_metrics_at_iterations, all_sem_metrics_at_iterations,optimal_iteration_indices):
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 8))
 
     for i, filters_dict in enumerate(filters_dicts):
         algo = determine_algorithm(filters_dict)
@@ -342,7 +376,7 @@ def plot_metric_bars_dpo_opt_iter(metric_config, filters_dicts, subfolder_path, 
     # Define bar properties
 
 def plot_metric_bars(metric_config, filters_dicts, subfolder_path, all_avg_metrics_at_iterations, all_sem_metrics_at_iterations):
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 8))
     #print(metric_config)
 
     color_map = {
@@ -479,7 +513,7 @@ def main():
         {'base_name': 'rewards/accuracies', 'count': group_count, 'mode': 'vald', 'separator': '_'},
         {'base_name': 'rewards/margins', 'count': group_count, 'mode': 'vald', 'separator': '_'},
         {'base_name': 'loss', 'count': group_count, 'mode': 'vald', 'separator': '/'},
-        {'base_name': 'rewards/weights', 'count': group_count, 'mode': 'train', 'separator': '_'},
+        #{'base_name': 'rewards/weights', 'count': group_count, 'mode': 'train', 'separator': '_'},
     ]
 
     # Initialize an empty list to collect all generated metrics
@@ -500,9 +534,7 @@ def main():
     #metrics_list.append('loss/train')
     metrics_to_collect=metrics_list
     #print(metrics_to_collect)
-    
-    
-    
+        
     all_metrics_history = {metric: [] for metric in metrics_to_collect}
 
     all_runs=[]
