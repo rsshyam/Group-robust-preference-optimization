@@ -229,8 +229,9 @@ def plot_metric_with_error_bands(iteration_index, metric_values, metric_sem, lab
     #print(metric_values,metric_sem,labels)
     for avg, sem, label in zip(metric_values, metric_sem, labels):
 
-        #avg = avg[:end]
-        #sem = sem[:end]
+        if 'weights' not in plot_title:
+            avg = avg[:end]
+            sem = sem[:end]
 
         #if extend and len(avg) != len(iteration_index):
         #print(plot_title)
@@ -247,11 +248,12 @@ def plot_metric_with_error_bands(iteration_index, metric_values, metric_sem, lab
             #    new_iteration_index = new_iteration_index[:len(avg)]
             #iteration_index = new_iteration_index
 
-            avg = np.array(avg)
-            avg = avg[np.arange(0, len(avg), int(eval_every/16))]
+            if 'weights' in plot_title:
+                avg = np.array(avg)
+                avg = avg[np.arange(0, len(avg), int(eval_every/16))]
 
-            sem = np.array(sem)
-            sem = sem[np.arange(0, len(sem), int(eval_every/16))]
+                sem = np.array(sem)
+                sem = sem[np.arange(0, len(sem), int(eval_every/16))]
 
         else:
             new_iteration_index = iteration_index    
