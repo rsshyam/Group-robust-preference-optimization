@@ -144,7 +144,8 @@ def create_filter_dicts(groups: list[str],n_epochs: int, base: bool=False, setti
         ipo_filter_2 = {**base_filter_ipo_adam, 'group': groups[0], 'config.patience_factor': 2, 'config.lr': 0.00003, 'config.scheduler_metric': 'loss', 'display_name': {"$regex":".*avg_fr_vald.*"}}
         sft_filter = {**base_filter_sft, 'group': groups[0]}
         gemma_base_filter={**base_filter_gemma_base, 'group': groups[0]}
-        return [ripo_filter, ripo_filter_2, ipo_filter,gemma_base_filter] if base else [ripo_filter, ipo_filter_2]
+        evalonce_filter = {**base_filter_ipo_adam, 'config.eval_only_once': True}
+        return [ripo_filter, ripo_filter_2, ipo_filter, gemma_base_filter, evalonce_filter] if base else [ripo_filter, ipo_filter_2, evalonce_filter]
 
     filters = []
     for group in groups:
@@ -265,7 +266,7 @@ def plot_metric_with_error_bands(iteration_index, metric_values, metric_sem, lab
         if label=='GR-IPO':
             legend_label = r'$\textbf{' + label + '}$'
         elif 'GR-IPO_grp' in label:
-            legend_label = f'GR-IPO Group {label[-1]}'
+            legend_label = f'GR-IPO Group {int(label[-1]) + 1}'
         else:
             legend_label = label
 
@@ -379,10 +380,39 @@ def plot_metric_bars_dpo(metric_config, filters_dicts, subfolder_path, all_avg_m
         
     neatplot.save_figure(f'{subfolder_path}/{safe_title}_bars',ext_list='pdf')
     plt.close()
-    # Define bar properties
+
+def plot_metric_bars_dpo_evalonce(subfolder_path, avg_metrics_at_iterations, sem_metrics_at_iterations):
+    plt.figure(figsize=(12, 8))
+
+    metrics = ['logps_pol_eval/accuracies_0', 'logps_pol_eval/accuracies_1', 'logps_pol_eval/accuracies_2', 'logps_pol_eval/accuracies_3', 'logps_pol_eval/accuracies_4']
+    metrics_end_avg = [avg_metrics_at_iterations[metric][0][0] for metric in metrics]
+    metrics_end_sem = [sem_metrics_at_iterations[metric][0] for metric in metrics]
+
+    bar_width = 0.8        
+    all_positions = []
+    positions = np.arange(len(metrics_end_avg))
+    all_positions.append(positions)
+
+    colors = ['tab:brown', 'tab:olive', 'tab:cyan', 'tab:purple', 'tab:green']
+    plt.bar(positions, height=metrics_end_avg, yerr=metrics_end_sem, width=bar_width, capsize=5, alpha=0.7,color=colors)
+    all_positions = np.array(all_positions).flatten()
+    plt.xticks(all_positions,[f'Group {i}' for i in range(1,len(metrics_end_avg)+1)],fontsize=40)
+
+    plt.tick_params(axis='x',which='major',labelsize=35)
+    plt.tick_params(axis='y',which='major',labelsize=35)
+    
+    plt.title('Log-Prob Accuracies (Start)',fontsize=55)
+    plt.ylabel('Value',fontsize=55)
+    plt.xlabel('Groups',fontsize=50)
+
+    #if 'worst_case_rewards_eval/accuracies' in metric_config['title']:
+    plt.ylim(bottom=0.5)  # Set y-axis limits starting from 0.5
+        
+    neatplot.save_figure(f'{subfolder_path}/logps_pol_eval-accuracies_start_bars',ext_list='pdf')
+    plt.close()
 
 def plot_metric_bars_dpo_opt_iter(metric_config, filters_dicts, subfolder_path, all_avg_metrics_at_iterations, all_sem_metrics_at_iterations,optimal_iteration_indices):
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 8))
 
     for i, filters_dict in enumerate(filters_dicts):
         algo = determine_algorithm(filters_dict)
@@ -572,6 +602,7 @@ def main():
     #print(metrics_to_collect)
         
     all_metrics_history = {metric: [] for metric in metrics_to_collect}
+    evalonce_metrics_history = {metric: [0] for metric in metrics_to_collect}
 
     all_runs=[]
     processed_filters = []
@@ -589,7 +620,10 @@ def main():
 
             # Accumulate metrics data for each configuration
             for metric in metrics_to_collect:
-                all_metrics_history[metric].append(metrics_history[metric])
+                if 'config.eval_only_once' not in filters_dict:
+                    all_metrics_history[metric].append(metrics_history[metric])
+                else:
+                    evalonce_metrics_history[metric] = metrics_history[metric]
             processed_filters.append(filters_dict)
     #print(all_metrics_history)
     filters_dict=processed_filters
@@ -612,11 +646,30 @@ def main():
 
     all_avg_metrics_at_iterations = {metric: [] for metric in metrics_to_collect}
     all_sem_metrics_at_iterations = {metric: [] for metric in metrics_to_collect}
+    
+    evalonce_avg_metrics_at_iterations = {metric: [] for metric in metrics_to_collect}
+    evalonce_sem_metrics_at_iterations = {metric: [] for metric in metrics_to_collect}
+
     for i, filters_dict in enumerate(filters_dicts):
         #optimal_iteration_index=np.argmax(avg_values.squeeze())
         #print(optimal_iteration_index)
         #optimal_iteration_indices.append(optimal_iteration_index)
         for metric in metrics_to_collect:
+            
+            if 'config.eval_only_once' in filters_dict:            
+                if 'logps_pol_eval/accuracies_' not in metric:
+                    all_avg_metrics_at_iterations[metric].append(0)
+                    all_sem_metrics_at_iterations[metric].append(0)
+                    continue
+
+                hist = evalonce_metrics_history[metric]
+                initial_logps = hist[0].iloc[0]
+
+                evalonce_avg_metrics_at_iterations[metric].append(initial_logps)
+                evalonce_sem_metrics_at_iterations[metric].append(0)
+
+                continue
+            
             #print(all_metrics_history[metric])
             values_matrix = all_metrics_history[metric][i]
             #print('VAL MATRIX: ', values_matrix[0:2])
@@ -655,7 +708,7 @@ def main():
     # Convert defaultdict to a regular dict
     plot_configs_dict = dict(plot_configs)
     
-    print(plot_configs_dict)
+    #print(plot_configs_dict)
     titles_dict = {
         'logps_accuracies': 'Log Likelihood Accuracies (Chosen vs Rejected)',
         'loss/train': 'Group Train Loss',
@@ -667,27 +720,17 @@ def main():
         'logps_accuracies_eval_1' : 'Log Likelihood Accuracies Group-1'
     }
     
-
+    valid_filters_dicts = [filter_dict for filter_dict in filters_dicts if 'config.eval_only_once' not in filter_dict]
+    plot_metric_bars_dpo_evalonce(subfolder_path, evalonce_avg_metrics_at_iterations, evalonce_sem_metrics_at_iterations)
 
     for metric, metrics in plot_configs_dict.items():
-        values, sems, labels = prepare_metric_data(filters_dicts, metrics,all_avg_metrics_at_iterations,all_sem_metrics_at_iterations,metrics)
+        values, sems, labels = prepare_metric_data(valid_filters_dicts, metrics,all_avg_metrics_at_iterations,all_sem_metrics_at_iterations,metrics)
         #metric_name = "_".join(metrics)
         #title=titles_dict[metric]
         plot_metric_with_error_bands(iteration_index, values, sems, labels, f'{metric} over Iterations', subfolder_path, f"{metric}", metric,eval_every=eval_every)
-    # Define a list of metric configurations for each plot
-    #metrics_configs = [
-    #    {'metrics': [metric for metric in metrics_to_collect if 'logps' in metric], 'title': 'Log Likelihood Accuracies (Chosen vs Rejected)', 'file_suffix': 'log_accuracy'},
-    #    {'metrics': [metric for metric in metrics_to_collect if 'loss/train' in metric], 'title': 'Group Train Loss at the End', 'file_suffix': 'train_group_loss_bars'},
-    #    {'metrics': [metric for metric in metrics_to_collect if 'loss/eval' in metric], 'title': 'Group Validation Loss at the End', 'file_suffix': 'val_group_loss_bars'},
-        #{'metrics': [metric for metric in metrics_to_collect if 'max_reward_err' in metric], 'title': 'Max Reward Error at the End', 'file_suffix': 'max_reward_bars'},
-        #{'metrics': [metric for metric in metrics_to_collect if 'max_train_grp_loss' in metric], 'title': 'Max Group Train Loss at the End', 'file_suffix': 'max_train_group_loss_bars'},
-        #{'metrics': [metric for metric in metrics_to_collect if 'max_val_grp_loss' in metric], 'title': 'Max Group Validation Loss at the End', 'file_suffix': 'max_val_group_loss_bars'},
-        #{'metrics': [metric for metric in metrics_to_collect if 'max_kl_dist' in metric], 'title': 'Max KL Distance at the End', 'file_suffix': 'max_kl_distance_bars'}
-    #]
-    #print(metrics_configs)
-    # Loop through each configuration and plot
+    
     for metric,metrics in plot_configs_dict.items():
-        plot_metric_bars_dpo({'title': metric, 'metrics':metrics}, filters_dicts, subfolder_path,all_avg_metrics_at_iterations,all_sem_metrics_at_iterations)
+        plot_metric_bars_dpo({'title': metric, 'metrics':metrics}, valid_filters_dicts, subfolder_path,all_avg_metrics_at_iterations,all_sem_metrics_at_iterations)
 
 if __name__ == "__main__":
     main()
