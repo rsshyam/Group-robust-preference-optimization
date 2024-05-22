@@ -10,7 +10,7 @@ This repo includes a reference implementation of the GRPO algorithm for training
 Similar to DPO, our pipeline has two stages:
 
 1. Run supervised fine-tuning (SFT) on the dataset(s) of interest.
-2. Run robust preference learning (IPO) on the model from step 1, using preference data.
+2. Run robust preference learning (GRIPO) on the model from step 1, using preference data.
 
 The files in this repo are:
 - `train.py`: the main entry point for training (either SFT/IPO/GRIPO preference-based training)
