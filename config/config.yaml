@@ -28,7 +28,7 @@ datasets:
 wandb:
   enabled: true
   entity: 'entity_name'
-  project: "project_name"
+  project: 'project_name'
   key: null
 scheduler_metric: "accuracy"
 patience_factor: 1 

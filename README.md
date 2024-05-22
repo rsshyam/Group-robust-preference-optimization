@@ -1,4 +1,4 @@
-# GRPO: Grup Robust Preference Optimization
+# GRPO: Group Robust Preference Optimization
 
 This codebase builds upon the DPO codebase publicly available in github https://github.com/eric-mitchell/direct-preference-optimization 
 
@@ -12,11 +12,11 @@ Similar to DPO, our pipeline has two stages:
 1. Run supervised fine-tuning (SFT) on the dataset(s) of interest.
 2. Run robust preference learning (GRIPO) on the model from step 1, using preference data.
 
-The files in this repo are:
+The important files in this repo are:
 - `train.py`: the main entry point for training (either SFT/IPO/GRIPO preference-based training)
-- `trainers.py`: the trainer classes (e.g., implementing the loop of learning)
-- `utils.py`: some convenience functions used by multiple other files
-- `preference_datasets.py`: dataset processing logic for both SFT and IPO/GRIPO preference-based training; 
+- `src/trainers_factory.py`: calls all the trainer classes from `src/trainers`
+- `src/utils.py`: common functions used by multiple methods
+- `src/preference_datasets.py`: dataset processing logic for both SFT and IPO/GRIPO preference-based training; 
 
 In this codebase, we specifically use the Gemma-2b model and the configurations used are detailed in `config/model/gemma-2b.yaml`. To download and use the Gemma-2b model, kindly refer to https://huggingface.co/google/gemma-2b. It is a gated model, and hence requires access through huggingface. 
 
