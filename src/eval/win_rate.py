@@ -6,7 +6,7 @@ from tqdm import tqdm
 import pickle
 from fast_oai import call_chats####openai_api added here, check file before using
 sys.path.append('..')
-sys.path.append('/home/uceesr4/will_dpo/direct-preference-optimization')#folderpath --- src or not?
+sys.path.append('path')#folderpath --- src or not?
 import os
 print(sys.path)
 #from epinet import get_shuffle_iterator
@@ -41,7 +41,6 @@ def main(csv_dir_path, overwrite_model_result=False):
         else:
             mask = pd.Series(True, index=df.index)
         #print(df.columns) 
-        #dataset = get_dataset(dataset_name, split='test', cache_dir='/scratch/uceesr4/.cache')
         #keys = list(dataset.keys())
         df['sample_only'] = df.apply(lambda row: row['sample'][len(row['prompt']):], axis=1)##removes prompt part of the sample and stores it in sample_only
         #df['sft_target'] = df.apply(lambda row: dataset[row['prompt']]['correct response'], axis=1)

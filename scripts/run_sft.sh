@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Default parameters
-MODEL="phi-3-mini4kinstr"
-DATASETS="oqa_SEX_Male,oqa_SEX_Female"
+MODEL="gemma-2b"
+DATASETS="goqa_0,goqa_1,goqa_2,goqa_3,goqa_4"
 TRAIN_FRAC=0.8
 LOSS="sft"
 GRADIENT_ACCUMULATION_STEPS=2

@@ -1,1 +1,0 @@
-sh scripts/run_multi.sh --model tiny-mistral --nseeds 1 --datasets goqa_0,goqa_1,goqa_2,goqa_3,goqa_4 --model_archive /scratch/uceesr4/.cache/uceesr4/goqa_0tr_frac0.8openaccess-ai-collective/tiny-mistral_spairs_False_GroupTrainer/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-05-09_01-23-14_111498/LATEST/policy.pt --trainer GroupTrainerDebug

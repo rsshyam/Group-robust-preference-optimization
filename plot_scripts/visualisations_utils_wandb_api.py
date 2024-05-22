@@ -1,9 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Tue Sep 19 17:01:59 2023
-
-@author: William
-"""
 
 import wandb
 import itertools
@@ -135,42 +130,4 @@ def process_and_plot_grp_runs(fig, axs, runs, fields):
     
 
     
-    
-    
-
-    
-#%% Test setup: plot runs from CINIC10
-
-if __name__ == '__main__':
-
-    entity='william_bankes'
-    project='RobustRHO-CINICFinalResults'
-    filters_mw = {'config.logger/wandb/tags':['CINIC10', 'robust']}
-    mw_runs = download_runs(entity=entity, project=project, filters=filters_mw)
-    
-    filters_rho = {'config.logger/wandb/tags':['CINIC10', 'reducible']}
-    rho_runs = download_runs(entity=entity, project=project, filters=filters_rho)
-
-    fig, axs = plt.subplots()
-    axs.set_title('Worst Class Test Accuracy')
-    axs.set_xlabel('Epochs')
-    axs.set_ylabel('Worst Class Test Accuracy')
-    axs.set_ylim([0,1])
-    
-    fields = [f'class_{c}_val_acc_epoch' for c in range(10)]
-    processed = process_max_fields(mw_runs, fields, maximum=False, time_field='epoch')
-    grp_processed = group_process_runs(processed, mw_runs)
-    
-    mean = grp_processed[0]
-    std  = grp_processed[1]
-    axs.plot(grp_processed.index, mean, label='ReDuCe-Loss', color='tab:blue')
-    axs.fill_between(grp_processed.index, mean-std, mean+std, alpha=0.2, color='tab:blue')
-    
-    fields = [f'class_{c}_val_acc_epoch' for c in range(10)]
-    processed = process_max_fields(rho_runs, fields, maximum=False, time_field='epoch')
-    grp_processed = group_process_runs(processed, rho_runs)
-    
-    mean = grp_processed[0]
-    std  = grp_processed[1]
-    axs.plot(grp_processed.index, mean, label='ReDuCe-Loss', color='tab:orange')
-    axs.fill_between(grp_processed.index, mean-std, mean+std, alpha=0.2, color='tab:orange')
+  

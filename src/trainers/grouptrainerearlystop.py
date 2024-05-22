@@ -649,15 +649,18 @@ class GroupTrainerEarlyStop(BasicTrainer):
                     rank0_print(current_lr, 'current learning rate')
 
                     if self.config.loss.name in {'rdpo', 'ripo'} and getattr(self.config.loss, 'adaptive_step_size', False):
-                        lr_change_factor = current_lr / self.initial_lr
-                        # Apply the same change factor to step_size if the learning rate has changed
-                        #if lr_change_factor != 1:
-                        new_step_size = self.initial_step_size * lr_change_factor
-                        self.config.loss.step_size = new_step_size
-                        print(f"Updated step_size to {new_step_size} due to LR change.")
-                        # Update initial values to reflect current settings
-                        self.initial_lr = current_lr
-                        self.initial_step_size = new_step_size
+                        tolerance = 1e-4  # Define a small tolerance value
+                        ratio = current_lr / self.initial_lr
+
+                        # Check if the ratio is approximately 0.1
+                        if abs(ratio - 0.1) < tolerance:
+                            lr_change_factor = ratio * (self.config.loss.step_factor / 0.1)
+                            new_step_size = self.initial_step_size * lr_change_factor
+                            self.config.loss.step_size = new_step_size
+                            print(f"Updated step_size to {new_step_size} due to LR change.")
+                            # Update initial values to reflect current settings
+                            self.initial_lr = current_lr
+                            self.initial_step_size = new_step_size
                     if current_lr < self.config.min_lr*(1.001):
                         print(f"Stopping training as learning rate {current_lr} is below the threshold {self.config.min_lr}")
                         break

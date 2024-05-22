@@ -27,3 +27,5 @@ dpowts: False
 divide_by_totalcount: True
 
 adaptive_step_size: False
+
+step_factor: 0.1

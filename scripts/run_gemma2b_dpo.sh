@@ -1,9 +1,0 @@
-python -u train.py model=gemma-2b datasets=[goqa_0,goqa_1] eval_every=96 train_frac=0.8 loss=dpo gradient_accumulation_steps=2 batch_size=16 eval_batch_size=16 sample_during_eval=False trainer=GroupTrainer lr=1e-4 model.archive=/scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-21_20-47-58_027081/LATEST/policy.pt loss.beta=0.1 seed=0
-
-python -u train.py model=gemma-2b datasets=[goqa_0,goqa_1] eval_every=96 train_frac=0.8 loss=dpo gradient_accumulation_steps=2 batch_size=16 eval_batch_size=16 sample_during_eval=False trainer=GroupTrainer lr=1e-4 model.archive=/scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-21_20-47-58_027081/LATEST/policy.pt loss.beta=0.1 seed=1
-
-python -u train.py model=gemma-2b datasets=[goqa_0,goqa_1] eval_every=96 train_frac=0.8 loss=dpo gradient_accumulation_steps=2 batch_size=16 eval_batch_size=16 sample_during_eval=False trainer=GroupTrainer lr=1e-4 model.archive=/scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-21_20-47-58_027081/LATEST/policy.pt loss.beta=0.1 seed=2
-
-python -u train.py model=gemma-2b datasets=[goqa_0,goqa_1] eval_every=96 train_frac=0.8 loss=dpo gradient_accumulation_steps=2 batch_size=16 eval_batch_size=16 sample_during_eval=False trainer=GroupTrainer lr=1e-4 model.archive=/scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-21_20-47-58_027081/LATEST/policy.pt loss.beta=0.1 seed=3
-
-python -u train.py model=gemma-2b datasets=[goqa_0,goqa_1] eval_every=96 train_frac=0.8 loss=dpo gradient_accumulation_steps=2 batch_size=16 eval_batch_size=16 sample_during_eval=False trainer=GroupTrainer lr=1e-4 model.archive=/scratch/uceesr4/.cache/uceesr4/sft_seed_0_batch_16_nepoch_1_lr_0.0001_2024-04-21_20-47-58_027081/LATEST/policy.pt loss.beta=0.1 seed=4

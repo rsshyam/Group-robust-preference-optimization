@@ -1,9 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Mon Mar 18 14:04:33 2024
-
-@author: William
-"""
 
 import json
 
