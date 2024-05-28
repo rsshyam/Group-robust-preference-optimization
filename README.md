@@ -59,6 +59,17 @@ In order to visualize the results, we collect data directly from wandb and plot 
 `plot_scripts/plot_from_wandb_full_metrics.py` plots all the relevant metrics tracked in our experiments
 `plot_scripts/plot_from_wandb_paper_plots.py` reproduces the plots mentioned in the paper
 
+## Citation
+Please cite our paper if you find the repo helpful in your work:
+
+```bibtex
+@article{ramesh2024grpo,
+  title={Group Robust Preference Optimization in Reward-free RLHF},
+  author={Shyam Sundhar Ramesh, Iason Chaimalas, Viraj Mehta, Haitham Bou Ammar, Pier Giuseppe Sessa, Yifan Hu, Ilija Bogunovic},
+  year={2024}
+}
+```
+
 
 
 
