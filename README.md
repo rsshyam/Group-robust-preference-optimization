@@ -29,6 +29,7 @@ First, create a virtualenv and install the dependencies. Python 3.10+ is recomme
     python3 -m venv env
     source env/bin/activate
     pip install -r main_requirements.txt
+    pip install scikit-learn
 
 
 In `config.yaml` setup your wandb details, so that results can be visualized there.
